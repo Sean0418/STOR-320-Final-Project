@@ -1,0 +1,162 @@
+---
+title: "regression_exploration"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r, message=FALSE, hidden=TRUE}
+library(tidyverse)
+library(gridExtra)
+library(caret)
+library(fmsb)
+create_beautiful_radarchart <- function(data, color = "#00AFBB", 
+                                        vlabels = colnames(data), vlcex = 0.7,
+                                        caxislabels = NULL, title = NULL, ...){
+  radarchart(
+    data, axistype = 1,
+    # Customize the polygon
+    pcol = color, pfcol = scales::alpha(color, 0.5), plwd = 2, plty = 1,
+    # Customize the grid
+    cglcol = "grey", cglty = 1, cglwd = 0.8,
+    # Customize the axis
+    axislabcol = "grey", 
+    # Variable labels
+    vlcex = vlcex, vlabels = vlabels,
+    caxislabels = caxislabels, title = title, ...
+  )
+}
+```
+
+This file contains an exploration of the regression analysis for Pick/Ban Rate, Win Rate, and Tier. 
+
+```{r, message=FALSE}
+
+
+leaguedf <- read_csv('../data_sets/S13LeagueOfLegendsData.csv', col_types=cols()) %>% 
+  select(c(5, 8, 10, 11, 12)) %>% 
+  rename(winr = "Win %", pick = 'Pick %', ban = 'Ban %') %>%
+  mutate(pbr = pick + ban) %>%
+  select(-c(3,4))
+
+head(leaguedf, 5)
+```
+
+```{r}
+
+leaguedf$Tier <- factor(leaguedf$Tier, levels=c('D', 'C', 'B', 'A', 'S', 'God'), ordered=TRUE)
+plot1 <- ggplot(data=leaguedf) + 
+  geom_boxplot(mapping = aes(x = Tier, y=winr, fill=Tier)) +
+  ggtitle('Win Rate and Tier') +
+  ylab('Win Rate') + 
+  theme(legend.position='none') +
+  scale_fill_brewer(palette="BuPu")
+
+plot2 <- ggplot(data = leaguedf) + 
+  geom_boxplot(mapping = aes(x= Tier, y=pbr, fill=Tier)) +
+  ggtitle('Pick/Ban Rate and Tier') +
+  ylab('Pick/Ban Rate') + 
+  theme(legend.position='none') + 
+  scale_fill_brewer(palette="Dark2")
+  
+  
+grid.arrange(plot1, plot2, ncol=2)
+
+
+```
+
+
+
+```{r}
+ggplot(data=leaguedf) + 
+  geom_bar(mapping=aes(x=Tier, fill=Tier)) + 
+  scale_fill_brewer('viridis') + 
+  theme(legend.position = 'none') + ylab("Number of Observations") 
+
+```
+
+```{r}
+tier_stats <- leaguedf %>%
+  group_by(Tier) %>% 
+  summarize(KDA = median(KDA), pbr = median(pbr), wr=median(winr))
+tier_stats$Tier <-  factor(tier_stats$Tier, levels=c('D', 'C', 'B', 'A', 'S', 'God'), ordered=TRUE)
+tier_stats <- as_tibble(tier_stats) %>% column_to_rownames(var = "Tier") 
+  # statistics wanted by tier, and change row name to tier
+
+max_min <- data.frame(KDA = c(0, 5), pbr=c(0,1), wr=c(0,1)) #Formatting data for radar chart
+rownames(max_min) <- c("Max", "Min")
+
+radar_frame <- rbind(max_min, tier_stats) #final frame for radar chart
+
+#The next two lines split the area for the radar charts
+op <- par(mar = c(1.5,1.5,1.5,1.5)) 
+#Split into 6 pieces
+par(mfrow = c(2,3))
+
+#Color for each tier
+colors = c("#D95F45", "#D9B245", "#62D945", "#45D9AA", "#45A6D9", "#7145D9")
+
+#Title for each chart
+titles = c("A", "B", "C", "D", "S", "God")
+
+#make them
+for (i in 1:6) {
+  create_beautiful_radarchart(data = radar_frame[c(1,2, i+2), ],
+                              color = colors[i], title = titles[i]
+                              )
+} #TODO: FIgure out why its wrong
+par(op)
+```
+
+p.s. I think spider plot is cooler name than radar chart.
+
+## Thoughts
+
+- For higher tiers, such as God, S, and A, it seems that pick ban rate significantly rises.
+- For lower tiers, such as D and C, the win rate significantly drops.
+- Alone, each of them would likely only do so well to analyze the tiers, but together they seem to be better.
+- The number of observations is fairly symmetric with respect to the middle (A/B)
+
+## Moving Forwards
+From here on, we will begin classification techniques. The data is overall fairly symmetric with respect to the 
+
+
+```{r}
+set.seed(27)
+
+# Split the data into test/train. We want 75% for training, and 25% for testing.
+
+inTrain <- createDataPartition(y=leaguedf$Tier, p=0.75, list=FALSE) 
+
+leagueTrain <- leaguedf[ inTrain, ]
+leagueTest <- leaguedf[ -inTrain, ]
+
+#Verify we did it correct, 0.75*5637 is approx 4225
+nrow(leagueTrain)
+```
+
+```{r}
+#Now we start the creation of the models, we chose K-nearest-neighbors, random-forest, and .... stuff
+
+#NOTE PLEASE TRAIN MODELS IN SEPERATE FILE, SAVE AND IMPORT HERE. TRAINING HERE MAKES KNITTING THE RMD FILE TAKE A LONG TIME.
+
+rf_fit <- train(as.factor(Tier) ~ .,
+                data = leagueTrain,
+                method="ranger")
+
+rf_fit
+```
+
+```{r}
+rf_pred <- predict(rf_fit, leagueTest)
+
+confusionMatrix(rf_pred, as.factor(leagueTest$Tier))
+
+```
+
+
+
