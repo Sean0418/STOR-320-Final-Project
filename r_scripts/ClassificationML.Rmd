@@ -1,5 +1,5 @@
 ---
-title: "regression_exploration"
+title: "Tier Classification with Random Forests and KNN Machine Learning"
 output: html_document
 date: "`r Sys.Date()`"
 ---
@@ -32,7 +32,7 @@ create_beautiful_radarchart <- function(data, color = "#00AFBB",
 }
 ```
 
-This file contains an exploration of the regression analysis for Pick/Ban Rate, Win Rate, and Tier. 
+This file contains an exploration of the classification analysis for Pick/Ban Rate, Win Rate, and KDA, as attempts to predict Tier. 
 
 ```{r, message=FALSE}
 
@@ -45,6 +45,12 @@ leaguedf <- read_csv('../data_sets/S13LeagueOfLegendsData.csv', col_types=cols()
 
 head(leaguedf, 5)
 ```
+#### Key for Reference
+- Tier: Tier of champion
+- winr: winrate of champion
+- KDA: Kill/Death/Assist Ratio, $\frac{\texts{kills} + \text{assists}}{\text{deaths}}$
+- pbr: Pick Ban Rate, Pick rate + Ban rate
+
 
 ```{r}
 
@@ -154,9 +160,33 @@ rf_fit
 ```{r}
 rf_pred <- predict(rf_fit, leagueTest)
 
-confusionMatrix(rf_pred, as.factor(leagueTest$Tier))
+cm <- confusionMatrix(rf_pred, as.factor(leagueTest$Tier), dnn = c("Prediction", "Actual"))
+plt <- as.data.frame(cm$table)
+plt$Prediction <- factor(plt$Prediction, levels=rev(levels(plt$Prediction)))
+
+ggplot(plt, aes(Prediction,Actual, fill=Freq)) +
+        geom_tile() + geom_text(aes(label=Freq)) +
+        scale_fill_gradient(low="white", high="#009194") +
+        labs(x = "Actual",y = "Prediction") +
+        scale_y_discrete(labels=c('D', 'C', 'B', 'A', 'S', 'God')) +
+        scale_x_discrete(labels=c('God', 'S', 'A', 'B', 'C', 'D'))
+
 
 ```
 
+```{r}
 
+Boundarydf = expand.grid(winr = seq(0.4, 0.6, length.out=100), pbr = seq(0, 1, length.out=100), KDA = seq(1, 5, length.out=100))
+Boundarydf$Tier <- predict(rf_fit, Boundarydf)
+```
+
+```{r}
+# TODO: Clean Leaguedf to only have 20 entries for each tier. Randomly chosen to make plot cleaner
+leaguedf %>%
+  ggplot(mapping=aes(x=winr, y=pbr, fill= Tier)) + geom_raster(data=Boundarydf, alpha=0.5) + geom_point(shape=21, mapping=aes(size=KDA), alpha=0.75) + theme_minimal() + xlab('Win Rate') + ylab('Pick Ban Rate') + ggtitle('Boundary Plot for RF Model Pre-Hypertuning')
+
+```
+- From the boundary plot and confusion matrix, we can see our model is pretty good at sorting through God, S, and A tiers, but worse at B and C.
+
+### Hypertuning Model
 
