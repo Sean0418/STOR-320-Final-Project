@@ -147,8 +147,9 @@ nrow(leagueTrain)
 
 ```{r}
 #Now we start the creation of the models, we chose K-nearest-neighbors, random-forest, and .... stuff
-
 #NOTE PLEASE TRAIN MODELS IN SEPERATE FILE, SAVE AND IMPORT HERE. TRAINING HERE MAKES KNITTING THE RMD FILE TAKE A LONG TIME.
+#Consider just doing 1 model and justifying?
+#Ranger should work with high dimensional data, I don't think 3 counts lol.
 
 rf_fit <- train(as.factor(Tier) ~ .,
                 data = leagueTrain,
@@ -175,18 +176,61 @@ ggplot(plt, aes(Prediction,Actual, fill=Freq)) +
 ```
 
 ```{r}
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
 
 Boundarydf = expand.grid(winr = seq(0.4, 0.6, length.out=100), pbr = seq(0, 1, length.out=100), KDA = seq(1, 5, length.out=100))
 Boundarydf$Tier <- predict(rf_fit, Boundarydf)
+Boundarydf <- Boundarydf %>%
+  group_by(winr, pbr) %>%
+  summarize(Tier = Mode(Tier)) %>%
+  ungroup()
 ```
 
 ```{r}
-# TODO: Clean Leaguedf to only have 20 entries for each tier. Randomly chosen to make plot cleaner
-leaguedf %>%
-  ggplot(mapping=aes(x=winr, y=pbr, fill= Tier)) + geom_raster(data=Boundarydf, alpha=0.5) + geom_point(shape=21, mapping=aes(size=KDA), alpha=0.75) + theme_minimal() + xlab('Win Rate') + ylab('Pick Ban Rate') + ggtitle('Boundary Plot for RF Model Pre-Hypertuning')
+randomentries <- tibble(winr = c(), pbr = c(), Tier=c())
+for (tier in unique(Boundarydf$Tier)) {
+  randomentries <- bind_rows(randomentries, sample_n(filter(leaguedf, Tier==tier), 30))
+}
+
+randomentries %>%
+  ggplot(mapping=aes(x=winr, y=pbr, fill= Tier)) + geom_raster(data=Boundarydf, alpha=0.5) + geom_point(shape=21, mapping=aes(size=KDA), alpha=0.75) + theme_minimal() + xlab('Win Rate') + ylab('Pick Ban Rate') + ggtitle('Boundary Plot of Random Sample for RF Model Pre-Hypertuning')
 
 ```
 - From the boundary plot and confusion matrix, we can see our model is pretty good at sorting through God, S, and A tiers, but worse at B and C.
+- We can tell from the boundary plot that Pick Ban Rate is very important in telling whether or not a champion is god tier, since almost all of the area above 50% pick ban rate is designated to God Tier.
 
-### Hypertuning Model
+
+### Preprocessing Data
+
+```{r}
+
+
+```
+
+### Hypertuning Model on Preprocess Data
+
+```{r}
+start <- proc.time()
+grid <- expand.grid(mtry = c(2,3), splitrule=c("extratrees", "gini"), min.node.size=c(1,10,25))
+
+fitControl <- trainControl(method='CV', number = 5, verboseIter=FALSE)
+
+fit <- train(as.factor(Tier)~.,
+             data=leagueTrain,
+             method="ranger",
+             tuneGrid=grid,
+             trControl = fitControl
+)
+
+print(fit)
+
+```
+
+
+### Recreation of Charts
+
+
 
