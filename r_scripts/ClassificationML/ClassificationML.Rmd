@@ -1,12 +1,13 @@
 ---
-title: "Tier Classification with Random Forests and KNN Machine Learning"
+title: "Tier Classification with Ranger model Machine Learning"
 output: html_document
 date: "`r Sys.Date()`"
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-
+options(dplyr.summarise.inform = FALSE)
+getwd()
 ```
 
 ```{r, message=FALSE, echo=FALSE}
@@ -14,6 +15,8 @@ library(tidyverse)
 library(gridExtra)
 library(caret)
 library(fmsb)
+library(arules)
+library(patchwork)
 create_beautiful_radarchart <- function(data, color = "#00AFBB", 
                                         vlabels = colnames(data), vlcex = 0.7,
                                         caxislabels = NULL, title = NULL, ...){
@@ -30,14 +33,14 @@ create_beautiful_radarchart <- function(data, color = "#00AFBB",
     caxislabels = caxislabels, title = title, ...
   )
 }
+
 ```
 
 This file contains an exploration of the classification analysis for Pick/Ban Rate, Win Rate, and KDA, as attempts to predict Tier. 
 
 ```{r, message=FALSE}
 
-
-leaguedf <- read_csv('../data_sets/S13LeagueOfLegendsData.csv', col_types=cols()) %>% 
+leaguedf <- read_csv('../../data_sets/S13LeagueOfLegendsData.csv', col_types=cols()) %>% 
   rename(winr = "Win %", pick = 'Pick %', ban = 'Ban %') %>%
   mutate(pbr = pick + ban) %>%
   select(-c(1,2,6,7,10,11))
@@ -124,6 +127,8 @@ par(op)
 
 p.s. I think spider plot is cooler name than radar chart.
 
+
+
 ## Thoughts
 
 - For higher tiers, such as God, S, and A, it seems that pick ban rate significantly rises.
@@ -178,7 +183,7 @@ ggplot(plt, aes(Prediction,Actual, fill=Freq)) +
         scale_fill_gradient(low="white", high="#009194") +
         labs(x = "Actual",y = "Prediction") +
         scale_y_discrete(labels=c('D', 'C', 'B', 'A', 'S', 'God')) +
-        scale_x_discrete(labels=c('God', 'S', 'A', 'B', 'C', 'D'))
+        scale_x_discrete(labels=c('God', 'S', 'A', 'B', 'C', 'D')) + theme_minimal()
 
 
 ```
@@ -200,6 +205,7 @@ write.csv(Boundarydf, "BoundaryFrame.csv")
 
 
 ```
+
 ```{r, echo=FALSE}
 Boundarydf <- read_csv("BoundaryFrame.csv")
 ```
@@ -212,7 +218,19 @@ leaguedf %>% filter(Role=="SUPPORT", Patch=="13_12", Class == "Mage" | Class == 
 
 ```
 
+```{r}
 
+leagueTest$pred <- rf_pred
+leagueTest %>%
+  mutate(correct = (pred == Tier)) %>% rowwise() %>%
+  filter(!(Class == 'NULL')) %>%
+  group_by(Role, Class) %>%
+  summarize(accuracy = sum(correct)/ n()) %>%
+  ungroup() %>% complete(Role, Class, fill=list(NULL)) %>%
+  ggplot() + geom_tile(mapping = aes(x = Role, y = Class, fill=accuracy )) + 
+    ggtitle("Heatmap for Accuracy by Class/Role") + 
+    scale_fill_continuous(na.value="darkred", breaks=c(0,0.5,1), labels=c("0%", "50%", "100%"), limits=c(0,1))
+```
 
 - From the boundary plot and confusion matrix, we can see our model is pretty good at sorting through God, S, and A tiers, but worse at B and C.
 - We can tell from the boundary plot that Pick Ban Rate is very important in telling whether or not a champion is god tier, since almost all of the area above 50% pick ban rate is designated to God Tier.
@@ -220,10 +238,25 @@ leaguedf %>% filter(Role=="SUPPORT", Patch=="13_12", Class == "Mage" | Class == 
 
 ### Preprocessing Data
 - TODO: 
-  - Discretize PBR/Wr
   - Turn Patch from categorical to numeric for <= comparisons
-  - ??
+  - Chose not to discretize winr/pbr for the reason that it is more useful for <= than it is for whatever else.
 ```{r}
+#This first part may be unneeded if you can tell discretizeDF to not like discretize everything Also currently not in use as discretize messed up the accuracy, see later for better preprocess techniques! <3
+tempdisc <- leaguedf %>% select(c(4,8)) %>%
+  discretizeDF(methods = list(
+    pbr = list(method = "interval", breaks = 100),
+    winr = list(method = "interval", breaks= 100)
+  ), default = list(methods="None"))
+
+leaguedf_final <- leaguedf %>%
+  mutate(Patch = as.numeric(str_replace(Patch, '(.*?)_(.*?)', '')))#This turns patch to numeric 
+
+
+
+inTrain <- createDataPartition(y=leaguedf_final$Tier, p=0.75, list=FALSE) 
+
+leagueTrain <- leaguedf_final[ inTrain, ]
+leagueTest <- leaguedf_final[ -inTrain, ]
 ```
 
 ### Hypertuning Model on Preprocess Data
@@ -234,7 +267,7 @@ fit <- readRDS("RangerFITwPatch.rds")
 
 ```{r, eval=FALSE}
 
-grid <- expand.grid(mtry = c(6,12,18,24,30,36), splitrule=c("extratrees", "gini"), min.node.size=c(1,10,25,40,50))
+grid <- expand.grid(mtry = c(6,9,12,15), splitrule=c("extratrees", "gini"), min.node.size=c(1,3,6,10))
 
 fitControl <- trainControl(method='CV', number = 5, verboseIter=FALSE)
 
@@ -250,7 +283,11 @@ saveRDS(fit, "RangerFITwPatch.rds")
 
 
 ```{r}
-print(fit)
+fit$results %>% 
+  mutate(mtry = as.character(mtry), min.node.size = as.character(min.node.size)) %>%
+  mutate(mtry = factor(mtry, levels=c("6", "9", "12", "15"), ordered=TRUE),
+         min.node.size = factor(min.node.size, levels = c("1","3", "6", "10"), ordered=TRUE)) %>%
+  ggplot() + geom_tile(mapping = aes(x=mtry, y=min.node.size, fill=Accuracy)) + facet_wrap(splitrule ~.) + ggtitle("Accuracy vs. Kappa for each value")
 ```
 
 ### Recreation of Charts
@@ -262,13 +299,79 @@ ggplot(varImp(fit), mapping=aes(x=reorder(variable, importance), y=importance, f
     ggtitle("Information Value Summary") +
     guides(fill = "none") +
     scale_fill_gradient(low = "red", high = "blue")
+```
 
+```{r, eval=FALSE}
+
+finalBoundarydf = expand.grid(winr = seq(0.4, 0.6, length.out=50), pbr = seq(0, 1, length.out=50), KDA = seq(1, 5, length.out=40), Role = "SUPPORT", `Role %` = seq(0.1,1, length.out=10), Patch=c(12), Class=c("Mage", "Support"))
+finalBoundarydf$Tier <- predict(fit, Boundarydf)
+finalBoundarydf <- Boundarydf %>%
+  group_by(winr, pbr) %>%
+  summarize(Tier = Mode(Tier)) %>%
+  ungroup()
+
+write.csv(Boundarydf, 'FinalBoundarydf.csv')
 
 ```
+```{r, echo=FALSE}
+finalBoundarydf <- read_csv("FinalBoundarydf.csv")
+```
+
+```{r, eval=TRUE, fig.height=5, fig.width=12}
+plot1 <- leaguedf %>%
+  filter(Role=="SUPPORT", Patch=="13_12", Class == "Mage" | Class == "Support") %>%
+  ggplot(mapping=aes(x=winr, y=pbr, fill= Tier)) + 
+    geom_raster(data=Boundarydf, alpha=0.5) + 
+    geom_point(shape=21, mapping=aes(size=KDA), alpha=0.75) + 
+    theme_minimal() + 
+    xlab('Win Rate') + 
+    ylab('Pick Ban Rate') + 
+    ggtitle('Pre tuning') 
+
+plot2 <- leaguedf %>% 
+  filter(Role=="SUPPORT", Patch=="13_12", Class == "Mage" | Class == "Support") %>%
+  ggplot(mapping=aes(x=winr, y=pbr, fill= Tier))+ 
+    geom_raster(data=finalBoundarydf, alpha=0.5) + 
+    geom_point(shape=21, mapping=aes(size=KDA), alpha=0.75) + 
+    theme_minimal() + 
+    xlab('Win Rate') + 
+    ylab('') + 
+    ggtitle('Post Tuning')
+
+patch = plot1 +  plot2 & theme(legend.position="bottom")
+patch + plot_layout(ncol=2,guides="collect") + plot_annotation(title="Boundary Plots for Support on Patch 13.12", theme = theme(plot.title = element_text(size = 20)))
+```
+
 ```{r}
+rf_pred <- predict(fit, leagueTest)
 
+cm <- confusionMatrix(rf_pred, as.factor(leagueTest$Tier), dnn = c("Prediction", "Actual"))
+plt <- as.data.frame(cm$table)
+plt$Prediction <- factor(plt$Prediction, levels=rev(levels(plt$Prediction)))
+
+ggplot(plt, aes(Prediction,Actual, fill=Freq)) +
+        geom_tile() + geom_text(aes(label=Freq)) +
+        scale_fill_gradient(low="white", high="#009194") +
+        labs(x = "Actual",y = "Prediction") +
+        scale_y_discrete(labels=c('D', 'C', 'B', 'A', 'S', 'God')) +
+        scale_x_discrete(labels=c('God', 'S', 'A', 'B', 'C', 'D')) + theme_minimal()
 
 
 ```
+
+
+```{r}
+leagueTest$pred <- rf_pred
+leagueTest %>%
+  mutate(correct = (pred == Tier)) %>% rowwise() %>%
+  filter(!(Class == 'NULL')) %>%
+  group_by(Role, Class) %>%
+  summarize(accuracy = sum(correct)/ n()) %>%
+  ungroup() %>% complete(Role, Class, fill=list(NULL)) %>%
+  ggplot() + geom_tile(mapping = aes(x = Role, y = Class, fill=accuracy )) + 
+    ggtitle("Heatmap for Accuracy by Class/Role") + 
+    scale_fill_continuous(na.value="darkred", breaks=c(0,0.5,1), labels=c("0%", "50%", "100%"), limits=c(0,1))
+```
+
 
 
