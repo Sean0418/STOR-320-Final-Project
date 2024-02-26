@@ -9,7 +9,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```
 
-```{r, message=FALSE, hidden=TRUE}
+```{r, message=FALSE, echo=FALSE}
 library(tidyverse)
 library(gridExtra)
 library(caret)
@@ -38,10 +38,10 @@ This file contains an exploration of the classification analysis for Pick/Ban Ra
 
 
 leaguedf <- read_csv('../data_sets/S13LeagueOfLegendsData.csv', col_types=cols()) %>% 
-  select(c(5, 8, 10, 11, 12)) %>% 
   rename(winr = "Win %", pick = 'Pick %', ban = 'Ban %') %>%
   mutate(pbr = pick + ban) %>%
-  select(-c(3,4))
+  select(-c(1,2,6,7,10,11))
+
 
 head(leaguedf, 5)
 ```
@@ -50,6 +50,10 @@ head(leaguedf, 5)
 - winr: winrate of champion
 - KDA: Kill/Death/Assist Ratio, $\frac{\texts{kills} + \text{assists}}{\text{deaths}}$
 - pbr: Pick Ban Rate, Pick rate + Ban rate
+- Class: Class of fighter, categorical choice
+- ROLE: role that data was collected for
+- Role %: Percentage of games that were played for this champion on this role
+- patch: Patch that data was collected from
 
 
 ```{r}
@@ -144,18 +148,22 @@ leagueTest <- leaguedf[ -inTrain, ]
 #Verify we did it correct, 0.75*5637 is approx 4225
 nrow(leagueTrain)
 ```
+```{r, eval=TRUE, echo=FALSE}
+rf_fit <- readRDS('rf_initial_fit.rds')
+```
 
-```{r}
-#Now we start the creation of the models, we chose K-nearest-neighbors, random-forest, and .... stuff
-#NOTE PLEASE TRAIN MODELS IN SEPERATE FILE, SAVE AND IMPORT HERE. TRAINING HERE MAKES KNITTING THE RMD FILE TAKE A LONG TIME.
-#Consider just doing 1 model and justifying?
-#Ranger should work with high dimensional data, I don't think 3 counts lol.
+
+```{r, eval=FALSE}
 
 rf_fit <- train(as.factor(Tier) ~ .,
                 data = leagueTrain,
                 method="ranger")
 
 rf_fit
+```
+
+```{r, echo=FALSE, eval=FALSE}
+saveRDS(rf_fit, "rf_initial_fit.rds")
 ```
 
 ```{r}
@@ -175,46 +183,58 @@ ggplot(plt, aes(Prediction,Actual, fill=Freq)) +
 
 ```
 
-```{r}
+```{r, eval=FALSE}
 Mode <- function(x) {
   ux <- unique(x)
   ux[which.max(tabulate(match(x, ux)))]
 }
 
-Boundarydf = expand.grid(winr = seq(0.4, 0.6, length.out=100), pbr = seq(0, 1, length.out=100), KDA = seq(1, 5, length.out=100))
+Boundarydf = expand.grid(winr = seq(0.4, 0.6, length.out=50), pbr = seq(0, 1, length.out=50), KDA = seq(1, 5, length.out=40), Role = "SUPPORT", `Role %` = seq(0.1,1, length.out=10), Patch=c("13_12"), Class=c("Mage", "Support"))
 Boundarydf$Tier <- predict(rf_fit, Boundarydf)
 Boundarydf <- Boundarydf %>%
   group_by(winr, pbr) %>%
   summarize(Tier = Mode(Tier)) %>%
   ungroup()
-```
 
-```{r}
-randomentries <- tibble(winr = c(), pbr = c(), Tier=c())
-for (tier in unique(Boundarydf$Tier)) {
-  randomentries <- bind_rows(randomentries, sample_n(filter(leaguedf, Tier==tier), 30))
-}
+write.csv(Boundarydf, "BoundaryFrame.csv")
 
-randomentries %>%
-  ggplot(mapping=aes(x=winr, y=pbr, fill= Tier)) + geom_raster(data=Boundarydf, alpha=0.5) + geom_point(shape=21, mapping=aes(size=KDA), alpha=0.75) + theme_minimal() + xlab('Win Rate') + ylab('Pick Ban Rate') + ggtitle('Boundary Plot of Random Sample for RF Model Pre-Hypertuning')
 
 ```
+```{r, echo=FALSE}
+Boundarydf <- read_csv("BoundaryFrame.csv")
+```
+
+```{r, eval=TRUE}
+
+
+leaguedf %>% filter(Role=="SUPPORT", Patch=="13_12", Class == "Mage" | Class == "Support") %>%
+  ggplot(mapping=aes(x=winr, y=pbr, fill= Tier)) + geom_raster(data=Boundarydf, alpha=0.5) + geom_point(shape=21, mapping=aes(size=KDA), alpha=0.75) + theme_minimal() + xlab('Win Rate') + ylab('Pick Ban Rate') + ggtitle('Boundary Plot for Support in Patch 13.12')
+
+```
+
+
+
 - From the boundary plot and confusion matrix, we can see our model is pretty good at sorting through God, S, and A tiers, but worse at B and C.
 - We can tell from the boundary plot that Pick Ban Rate is very important in telling whether or not a champion is god tier, since almost all of the area above 50% pick ban rate is designated to God Tier.
 
 
 ### Preprocessing Data
-
+- TODO: 
+  - Discretize PBR/Wr
+  - Turn Patch from categorical to numeric for <= comparisons
+  - ??
 ```{r}
-
-
 ```
 
 ### Hypertuning Model on Preprocess Data
+This will take a long time, so please be patient if you run this yourself.
+```{r, echo=FALSE}
+fit <- readRDS("RangerFITwPatch.rds")
+```
 
-```{r}
-start <- proc.time()
-grid <- expand.grid(mtry = c(2,3), splitrule=c("extratrees", "gini"), min.node.size=c(1,10,25))
+```{r, eval=FALSE}
+
+grid <- expand.grid(mtry = c(6,12,18,24,30,36), splitrule=c("extratrees", "gini"), min.node.size=c(1,10,25,40,50))
 
 fitControl <- trainControl(method='CV', number = 5, verboseIter=FALSE)
 
@@ -222,15 +242,33 @@ fit <- train(as.factor(Tier)~.,
              data=leagueTrain,
              method="ranger",
              tuneGrid=grid,
-             trControl = fitControl
+             trControl = fitControl, importance="impurity"
 )
-
-print(fit)
+saveRDS(fit, "RangerFITwPatch.rds")
 
 ```
 
 
+```{r}
+print(fit)
+```
+
 ### Recreation of Charts
 
+```{r}
+ggplot(varImp(fit), mapping=aes(x=reorder(variable, importance), y=importance, fill=importance)) + geom_bar(stat = "identity", position = "dodge")  +
+    ylab("Variable Importance") +
+    xlab("") +
+    ggtitle("Information Value Summary") +
+    guides(fill = "none") +
+    scale_fill_gradient(low = "red", high = "blue")
+
+
+```
+```{r}
+
+
+
+```
 
 
