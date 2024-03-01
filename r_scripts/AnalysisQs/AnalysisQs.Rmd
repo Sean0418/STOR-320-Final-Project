@@ -8,6 +8,8 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(patchwork)
+library(gganimate)
+library(plotly)
 ```
 
 ```{r}
@@ -91,11 +93,42 @@ Spread_Data <- as_tibble(t(Spread_Data)) %>%
   mutate_if(is.character, as.numeric)
 
 colnames(Spread_Data) <- NameList
-CoVarMat <- as_tibble(cov(Spread_Data))
+CoVarMat <- as_tibble(cor(Spread_Data))
 rownames(CoVarMat) <- colnames(CoVarMat)
 
-CoVarMat %>% select(Senna.SUPPORT) %>%
-  ggplot() + geom_boxplot(mapping = aes(x='', y=Senna.SUPPORT), id.method='y') + ylab("Senna Support Covariance") + ggtitle("Covariance Boxplot Example")
+CoVarMat %>% select(Senna.SUPPORT, `Tahm Kench.SUPPORT`, Ashe.ADC) %>% filter(!(Senna.SUPPORT == 1)) %>%
+  ggplot() + geom_boxplot(mapping = aes(x='', y=), id.method='y') + ylab("Senna Support Covariance") + ggtitle("Covariance Boxplot Example") 
 ```
 
+```{r, eval=FALSE}
+p <- leaguedf %>%
+  select("Name", "PickBanRate", "WinRate", "Role", "RoleRate", "Class", "Patch") %>% 
+  filter(!(Class == "NULL")) %>%
+  ggplot() + geom_point(mapping= aes(x = PickBanRate, y = WinRate, size=RoleRate, color=Class)) + 
+  facet_wrap(~ Role) + xlab("Pick Ban Rate") + ylab("Win Rate")
+gif <- p + transition_states(Patch, 
+                             transition_length = 3, 
+                             state_length= 1) + 
+  labs(title = "Patch: {closest_state}")
+anim <- animate(gif, fps = 30, nframes = 480)
+anim
+```
 
+```{r, fig.height=8, fig.width=8}
+leaguedf %>%
+  select("Name", "PickBanRate", "WinRate", "Role", "RoleRate", "Class", "Patch") %>%
+  filter(!(Class == "NULL")) %>%
+  group_by(Role) %>%
+  group_map( ~ plot_ly(data = .,
+      x = ~ PickBanRate,
+      y = ~ WinRate,
+      size = ~ RoleRate,
+      frame = ~ Patch,
+      color = ~ Class,
+      text = ~ Name,
+      hoverinfo = "text",
+      type = "scatter"
+      ), .keep = TRUE) %>%
+  subplot(nrows = 2, shareX = TRUE, shareY=TRUE)
+
+```
