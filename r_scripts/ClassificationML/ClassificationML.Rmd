@@ -237,8 +237,6 @@ leagueTestinit %>%
 
 
 ### Preprocessing Data
-- TODO: 
-  - Noise injection into data and replication of data using noise to expand training set.
 ```{r}
 #First we want to create extra data.
 
@@ -254,15 +252,6 @@ inTrain <- createDataPartition(y=leaguedf_final$Tier, p=0.75, list=FALSE)
 leagueTrain <- leaguedf_final[ inTrain, ]
 leagueTest <- leaguedf_final[ -inTrain, ]
 
-leaguedf_noise <- rbind(leagueTrain, leagueTrain, leagueTrain, leagueTrain, leagueTrain) #This way we have 3x as much data, but we have 3 entries for every unique row
-corrupt <- rbinom(length(leaguedf_noise$Tier), 1, 0.5) #Choose about 50 Percent of the data at random to corrupt with noise injection
-corrupt <- as.logical(corrupt)
-
-noise <- rnorm(sum(corrupt), 0, 0.01)
-
-leaguedf_noise$KDA[corrupt] = leaguedf_noise$KDA[corrupt] + noise
-leaguedf_noise$pbr[corrupt] = leaguedf_noise$pbr[corrupt] + noise
-leaguedf_noise$winr[corrupt] = leaguedf_noise$winr[corrupt] + noise
 
 ```
 
@@ -275,10 +264,10 @@ fit <- readRDS("RangerFITwPatch.rds")
 ```{r, eval=FALSE}
 grid <- expand.grid(mtry = c(6,9,12), splitrule=c("extratrees", "gini"), min.node.size=c(1,3,6,10))
 
-fitControl <- trainControl(method='CV', number = 5, verboseIter=TRUE)
+fitControl <- trainControl(method='CV', number = 5, verboseIter=FALSE)
 
 fit <- train(as.factor(Tier)~.,
-             data=leaguedf_noise,
+             data=leagueTrain,
              method="ranger",
              tuneGrid=grid,
              trControl = fitControl, importance="impurity"
@@ -295,7 +284,7 @@ saveRDS(fit, "RangerFITwPatch.rds")
 paste("Initial accuracy is: ", round(sum(leagueTestinit$Tier == predict(rf_fit, leagueTestinit)) / length(leagueTestinit$Tier), 4)*100, '%', sep='')
 paste("Final accuracy is: ", round(sum(leagueTest$Tier == predict(fit, leagueTest)) / length(leagueTest$Tier), 4)*100, '%', sep='')
 
-fit$results %>% 
+fit$results %>%  
   mutate(mtry = as.character(mtry), min.node.size = as.character(min.node.size)) %>%
   mutate(mtry = factor(mtry, levels=c("6", "9", "12", "15"), ordered=TRUE),
          min.node.size = factor(min.node.size, levels = c("1","3", "6", "10"), ordered=TRUE)) %>%
@@ -372,7 +361,7 @@ plot2 <- leaguedf %>%
     ylab('') + 
     ggtitle('Post Tuning')
 
-patch = plot1 +  plot2 & theme(legend.position="bottom")
+patch <- plot1 +  plot2 & theme(legend.position="bottom")
 patch + plot_layout(ncol=2,guides="collect") + plot_annotation(title="Boundary Plots for Support on Patch 13.12", theme = theme(plot.title = element_text(size = 20)))
 ```
 
@@ -408,4 +397,51 @@ leagueTest %>%
 ```
 
 
+##HYpothesis Testing
 
+- Null Hypothesis: The Pick Ban Rate is not an important indicator in the classification algorithm, the difference between a complete alogrithm and an alogrithm without PBR is not statistically significant in the negative direction.
+
+```{r}
+pbrOnly <- leaguedf %>%
+  select(-'pbr') %>%
+  mutate(Patch = as.numeric(str_replace(Patch, '(.*?)_(.*?)', '')))
+pbrTrain_rows <- createDataPartition(y=leaguedf_final$Tier, p=0.75, list=FALSE) 
+
+pbrTrain <- pbrOnly[-pbrTrain_rows, ]
+pbrTest <- pbrOnly[pbrTrain_rows, ]
+
+pbrFit <- train(as.factor(Tier)~.,
+             data=pbrTrain,
+             method="ranger",
+)
+```
+
+```{r}
+paste("Initial accuracy is: ", round(sum(pbrTest$Tier == predict(pbrFit, pbrTest)) / length(pbrTest$Tier), 4)*100, '%', sep='')
+```
+
+```{r}
+#Hypertuning Model before finishing
+grid <- expand.grid(mtry = c(6,9,12, 14), splitrule=c("extratrees", "gini"), min.node.size=c(1,3,6,10))
+
+fitControl <- trainControl(method='CV', number = 5, verboseIter=FALSE)
+
+pbrTunedFit <- train(as.factor(Tier)~.,
+             data=pbrTrain,
+             method="ranger",
+             tuneGrid=grid,
+             trControl = fitControl, importance="impurity"
+)
+print(pbrTunedFit$finalModel)
+```
+
+```{r}
+paste("Initial accuracy is: ", round(sum(pbrTest$Tier == predict(pbrFit, pbrTest)) / length(pbrTest$Tier), 4)*100, '%', sep='')
+paste("Final accuracy is: ", round(sum(pbrTest$Tier == predict(pbrTunedFit, pbrTest)) / length(pbrTest$Tier), 4)*100, '%', sep='')
+
+```
+
+```{r}
+#TODO: significance testing, probably bayesian
+
+```
