@@ -10,6 +10,7 @@ library(tidyverse)
 library(patchwork)
 library(gganimate)
 library(plotly)
+library(reshape2)
 ```
 
 ```{r}
@@ -96,8 +97,21 @@ colnames(Spread_Data) <- NameList
 CoVarMat <- as_tibble(cor(Spread_Data))
 rownames(CoVarMat) <- colnames(CoVarMat)
 
-CoVarMat %>% select(Senna.SUPPORT, `Tahm Kench.SUPPORT`, Ashe.ADC) %>% filter(!(Senna.SUPPORT == 1)) %>%
-  ggplot() + geom_boxplot(mapping = aes(x='', y=), id.method='y') + ylab("Senna Support Covariance") + ggtitle("Covariance Boxplot Example") 
+df <- CoVarMat %>% select(Senna.SUPPORT, `Tahm Kench.SUPPORT`, Ashe.ADC) %>%
+  gather(key = "Champion", value = "Covariance") %>%
+  mutate(label = case_when(
+    Champion == 'Tahm Kench.SUPPORT' & Covariance >= 0.97 ~ "Tahm Kench TOP",
+    Champion == 'Tahm Kench.SUPPORT' & abs(Covariance) > 0.68 ~ "Senna Support",
+    TRUE ~ as.character(NA)
+  )) %>%
+  filter(Covariance < 1)
+
+ggplot(data = df, mapping = aes(x=Champion, y = Covariance)) + 
+  geom_boxplot() + 
+  ylab("Pick Ban Rate Covariance") + 
+  ggtitle("PBR Covariance Boxplot") + 
+  geom_text(aes(label = label), na.rm = TRUE, hjust = -0.1, size = 3) + 
+  scale_x_discrete(name = c("Ashe ADC", "Senna Support", "Tahm Kench Support"))
 ```
 
 ```{r, eval=FALSE}
@@ -114,7 +128,61 @@ anim <- animate(gif, fps = 30, nframes = 480)
 anim
 ```
 
-```{r, fig.height=8, fig.width=8}
+```{r, echo= FALSE}
+annotations = list( 
+  list( 
+    x = 0.015,  
+    y = 1.0,  
+    text = "ADC",  
+    xref = "paper",  
+    yref = "paper",  
+    xanchor = "center",  
+    yanchor = "bottom",  
+    showarrow = FALSE 
+  ),  
+  list( 
+    x = 0.3925,  
+    y = 1,  
+    text = "Jungle",  
+    xref = "paper",  
+    yref = "paper",  
+    xanchor = "center",  
+    yanchor = "bottom",  
+    showarrow = FALSE 
+  ),  
+  list( 
+    x = 0.715,  
+    y = 1,  
+    text = "Mid",  
+    xref = "paper",  
+    yref = "paper",  
+    xanchor = "center",  
+    yanchor = "bottom",  
+    showarrow = FALSE 
+  ),
+  list( 
+    x = 0.0375,  
+    y = 0.46,  
+    text = "Support",  
+    xref = "paper",  
+    yref = "paper",  
+    xanchor = "center",  
+    yanchor = "bottom",  
+    showarrow = FALSE 
+  ), 
+  list( 
+    x = 0.38,  
+    y = 0.46,  
+    text = "Top",  
+    xref = "paper",  
+    yref = "paper",  
+    xanchor = "center",  
+    yanchor = "bottom",  
+    showarrow = FALSE 
+  ))
+```
+
+```{r, fig.height=6, fig.width=8, message = FALSE, warning = FALSE}
 leaguedf %>%
   select("Name", "PickBanRate", "WinRate", "Role", "RoleRate", "Class", "Patch") %>%
   filter(!(Class == "NULL")) %>%
@@ -122,13 +190,33 @@ leaguedf %>%
   group_map( ~ plot_ly(data = .,
       x = ~ PickBanRate,
       y = ~ WinRate,
-      size = ~ RoleRate,
-      frame = ~ Patch,
       color = ~ Class,
       text = ~ Name,
+      frame = ~ Patch, 
       hoverinfo = "text",
-      type = "scatter"
+      type = "scatter",
+      mode = "markers", 
+      marker = list(size = ~ RoleRate*5)
       ), .keep = TRUE) %>%
-  subplot(nrows = 2, shareX = TRUE, shareY=TRUE)
+  subplot(nrows = 2, shareX = TRUE, shareY=TRUE, margin=0.03) %>%
+  layout(showlegend = FALSE, title = 'Pick Ban Rate vs. Win Rate by Patch seperated by Role',
+         plot_bgcolor='#e5ecf6', 
+         xaxis = list( 
+           zerolinecolor = '#ffff', 
+           zerolinewidth = 2, 
+           gridcolor = 'ffff'), 
+         yaxis = list( 
+           zerolinecolor = '#ffff', 
+           zerolinewidth = 2, 
+           gridcolor = 'ffff'),
+         margin = 0.07) %>%
+  layout(annotations = annotations)
+```
+
+```{r, eval=FALSE}
+#Correlation plots for all questions
+
+plot1a <- leaguedf %>%
+  ggplot() + geom_point(x = PickBanRate)
 
 ```
