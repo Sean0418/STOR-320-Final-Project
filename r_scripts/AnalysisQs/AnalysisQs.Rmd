@@ -78,7 +78,7 @@ patched
 
 Is this useful?????? What do you gain from it??
 
-```{r}
+```{r, warning = F}
 #Covariation of PBR for champions.
 
 Spread_Data <- leaguedf %>% 
@@ -94,22 +94,20 @@ Spread_Data <- as_tibble(t(Spread_Data)) %>%
   mutate_if(is.character, as.numeric)
 
 colnames(Spread_Data) <- NameList
-CoVarMat <- as_tibble(cor(Spread_Data))
-rownames(CoVarMat) <- colnames(CoVarMat)
+CorrMat <- as_tibble(cor(Spread_Data))
+rownames(CorrMat) <- colnames(CorrMat)
 
-df <- CoVarMat %>% select(Senna.SUPPORT, `Tahm Kench.SUPPORT`, Ashe.ADC) %>%
-  gather(key = "Champion", value = "Covariance") %>%
+df <- CorrMat %>% rownames_to_column(var = "Champion1") %>% select(Senna.SUPPORT, `Tahm Kench.SUPPORT`, Ashe.ADC, Champion1) %>%
+  gather(key = "Champion", value = "Correlation", -Champion1) %>%
   mutate(label = case_when(
-    Champion == 'Tahm Kench.SUPPORT' & Covariance >= 0.97 ~ "Tahm Kench TOP",
-    Champion == 'Tahm Kench.SUPPORT' & abs(Covariance) > 0.68 ~ "Senna Support",
     TRUE ~ as.character(NA)
   )) %>%
-  filter(Covariance < 1)
+  filter(Correlation < 1)
 
-ggplot(data = df, mapping = aes(x=Champion, y = Covariance)) + 
+ggplot(data = df, mapping = aes(x=Champion, y = Correlation)) + 
   geom_boxplot() + 
-  ylab("Pick Ban Rate Covariance") + 
-  ggtitle("PBR Covariance Boxplot") + 
+  ylab("Pick Ban Rate Correlation") + 
+  ggtitle("PBR Correlation Boxplot") + 
   geom_text(aes(label = label), na.rm = TRUE, hjust = -0.1, size = 3) + 
   scale_x_discrete(name = c("Ashe ADC", "Senna Support", "Tahm Kench Support"))
 ```
@@ -213,10 +211,98 @@ leaguedf %>%
   layout(annotations = annotations)
 ```
 
-```{r, eval=FALSE}
-#Correlation plots for all questions
 
-plot1a <- leaguedf %>%
-  ggplot() + geom_point(x = PickBanRate)
+```{r, echo = F}
+library(caret)
+```
 
+```{r, fig.height = 10}
+corr_data <- leaguedf %>%
+  select(c("WinRate", "Role", "KDA")) %>%
+  pivot_wider(names_from = Role,
+              values_from = Role,
+              values_fn = function(x) TRUE,
+              values_fill = FALSE)
+
+model <- nls(WinRate ~ a*KDA + b*TOP*KDA^2 + c*MID*KDA^2 + d*JUNGLE*KDA^2 + e*SUPPORT*KDA^2 + f*ADC*KDA^2 + g, data = corr_data, start = list(a = 0.01, b = 0.01, c = 0.01, d = 0.01, e = 0.01, f = 0.01, g = 0.4))
+
+predict_wr <- function(kda, top, mid, jungle, support, adc) {
+  predict(model, newdata = data.frame(KDA = kda, TOP = top, MID = mid, JUNGLE = jungle, SUPPORT = support, ADC = adc))
+}
+
+train_control <- trainControl(method = "repeatedcv", number = 25, repeats = 5)
+nls1 <- train(WinRate ~ predict_wr(KDA, TOP, MID, JUNGLE, SUPPORT, ADC), data = corr_data,
+                                         method = "lm", 
+                                         trControl = train_control,
+                                         preProcess = c("center", "scale"))
+
+summary(nls1) 
+summary(model)
+```
+
+```{r, fig.height = 10, fig.width =}
+
+corr_data <- corr_data %>%
+  mutate(pred = predict(nls1, .))
+
+MidGrid <- expand.grid(KDA = seq(0,5, length.out = 501), MID = c(TRUE), TOP = FALSE, ADC = FALSE, SUPPORT = FALSE, JUNGLE = FALSE)
+MidGrid$WinRate <- predict(nls1, MidGrid)
+JungleGrid <- expand.grid(KDA = seq(0,5, length.out = 501), MID = FALSE, TOP = FALSE, ADC = FALSE, SUPPORT = FALSE, JUNGLE = TRUE)
+JungleGrid$WinRate <- predict(nls1, JungleGrid)
+TopGrid <- expand.grid(KDA = seq(0,5, length.out = 501), MID = FALSE, TOP = T, ADC = FALSE, SUPPORT = FALSE, JUNGLE = FALSE)
+TopGrid$WinRate <- predict(nls1, TopGrid)
+ADCGrid <- expand.grid(KDA = seq(0,5, length.out = 501), MID = F, TOP = FALSE, ADC = T, SUPPORT = FALSE, JUNGLE = FALSE)
+ADCGrid$WinRate <- predict(nls1, ADCGrid)
+SupportGrid <- expand.grid(KDA = seq(0,5, length.out = 501), MID = F, TOP = FALSE, ADC = FALSE, SUPPORT = T, JUNGLE = FALSE)
+SupportGrid$WinRate <- predict(nls1, SupportGrid)
+
+plot1a <- corr_data %>% filter(MID == TRUE) %>%
+  ggplot(mapping = aes(x = KDA, y = WinRate)) + 
+  geom_point(alpha = 0.1) + 
+  geom_line(data = MidGrid, mapping = aes(x = KDA, y = WinRate), color = "blue") + 
+  ggtitle("Mid") 
+
+plot1b <- corr_data %>% filter(ADC == TRUE) %>%
+  ggplot(mapping = aes(x = KDA, y = WinRate)) + 
+  geom_point(alpha = 0.1) + 
+  geom_line(data = ADCGrid, mapping = aes(x = KDA, y = WinRate), color = "red")+ 
+  ggtitle("ADC")
+
+plot1c <- corr_data %>% filter(SUPPORT == TRUE) %>%
+  ggplot(mapping = aes(x = KDA, y = WinRate)) + 
+  geom_point(alpha = 0.1) + 
+  geom_line(data = SupportGrid, mapping = aes(x = KDA, y = WinRate), color = "green") + 
+  ggtitle("Support")
+
+plot2a <- corr_data %>% filter(JUNGLE== TRUE) %>%
+  ggplot(mapping = aes(x = KDA, y = WinRate)) + 
+  geom_point(alpha = 0.1) + 
+  geom_line(data = JungleGrid, mapping = aes(x = KDA, y = WinRate), color = "purple") + 
+  ggtitle("Jungle")
+
+plot2b <- corr_data %>% filter(TOP == TRUE) %>%
+  ggplot(mapping = aes(x = KDA, y = WinRate)) + 
+  geom_point(alpha = 0.1) + 
+  geom_line(data = TopGrid, mapping = aes(x = KDA, y = WinRate), color = "orange") + 
+  ggtitle("Top")
+
+pw <- (plot1a & plot1b) / (plot1c) / (plot2a & plot2b) 
+
+pw
+```
+
+
+
+```{r}
+MidGrid <- expand.grid(KDA = seq(0,5, length.out = 501), MID = c(TRUE), TOP = FALSE, ADC = FALSE, SUPPORT = FALSE, JUNGLE = FALSE)
+MidGrid$WinRate <- predict(nls1, MidGrid)
+
+plot1a <- corr_data %>% filter(MID == TRUE) %>%
+  ggplot(mapping = aes(x = KDA, y = WinRate)) + 
+  geom_point(alpha = 0.1) + 
+  geom_line(data = MidGrid, mapping = aes(x = KDA, y = WinRate), color = "blue") + 
+  ggtitle("Mid") 
+
+
+plot1a
 ```
