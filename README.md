@@ -32,6 +32,10 @@ This projects aims to be an analaysis of the balance changes and tier system of 
 12. Pick/Ban: The rate a champion is picked or banned
     - Calculated by $\text{Pick\%} + \text{Ban\%}$
 
-## Project contents (WIP and TODO list):
+## Project contents
 1. ClassificationML
-    - Classification of Tier using KDA, Pick/Ban Rate, and Win rate. 
+    - Classification of Tier using a 'ranger' random forest model, and impurity testing for the importance of variables
+    - Found that pick ban rate was the most important variable in predicting tier, with over double the next impurity score, at statistically significant levels (p < 0.01).
+2. AnalysisQs
+    - Small analysis of different ideas present in the data set.
+    - Contains insight into volatility of champions, Win Rates over time, correlation between champions pick ban rates, and non-linear regression of win rate prediction using KDA and role.
