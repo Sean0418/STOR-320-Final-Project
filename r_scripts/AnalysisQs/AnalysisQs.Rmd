@@ -73,7 +73,11 @@ plot2b <- leaguedfRole %>% filter(Name == "Heimerdinger") %>%
 
 
 patched <- (plot1a & plot1b) / (plot2a & plot2b)
-patched
+patched + plot_annotation(
+  title = "Time Series plotting for Winrate and PickBanrate",
+  subtitle = "With a special appearance by Heimerdinger!",
+  caption = "Lines that dissapear and reappearindicate that the chapmion did not have a high enough play rate to be considered for that role."
+)
 ```
 
 Is this useful?????? What do you gain from it??
@@ -99,20 +103,25 @@ rownames(CorrMat) <- colnames(CorrMat)
 
 df <- CorrMat %>% rownames_to_column(var = "Champion1") %>% select(Senna.SUPPORT, `Tahm Kench.SUPPORT`, Ashe.ADC, Champion1) %>%
   gather(key = "Champion", value = "Correlation", -Champion1) %>%
+  filter(Correlation < 1) %>%
+  group_by(Champion) %>%
+  arrange(Correlation) %>%
   mutate(label = case_when(
+    row_number() <= 1 ~ str_to_title(str_replace(Champion1, '\\.', ' ')),
+    row_number() > n() - 1 ~ str_to_title(str_replace(Champion1, '\\.', ' ')), # This adds a Space into the name where the . is  and uncapitalizes the second role
+    Champion == "Tahm Kench.SUPPORT" & Correlation > 0.68 ~ "Senna Support", # This is an outlier so labeling is justified, especially since it helps show the part of the plot
     TRUE ~ as.character(NA)
-  )) %>%
-  filter(Correlation < 1)
+  )) 
 
 ggplot(data = df, mapping = aes(x=Champion, y = Correlation)) + 
   geom_boxplot() + 
-  ylab("Pick Ban Rate Correlation") + 
-  ggtitle("PBR Correlation Boxplot") + 
-  geom_text(aes(label = label), na.rm = TRUE, hjust = -0.1, size = 3) + 
-  scale_x_discrete(name = c("Ashe ADC", "Senna Support", "Tahm Kench Support"))
+  ggtitle("PBR Correlation Boxplot")+ 
+  scale_x_discrete(labels = c("Ashe ADC", "Senna Support", "Tahm Kench Support")) + 
+  labs(x = "", y = "Pick Ban Rate Correlation Coefficient", caption = "Minimum and Maximum corelation coefficients are annotated, as well as Senna Support for Tahm Kench Support in order\n to best visualize how the strength of certain counters, replacements, and synergies effect Pick Ban Rate.")  + 
+  geom_text(aes(label = label), na.rm = TRUE, hjust = -0.1, size = 3) 
 ```
 
-```{r, eval=FALSE}
+```{r, eval=FALSE, echo = F}
 p <- leaguedf %>%
   select("Name", "PickBanRate", "WinRate", "Role", "RoleRate", "Class", "Patch") %>% 
   filter(!(Class == "NULL")) %>%
@@ -212,7 +221,7 @@ leaguedf %>%
 ```
 
 
-```{r, echo = F}
+```{r, echo = F, message = F, warning = F}
 library(caret)
 ```
 
@@ -240,11 +249,7 @@ summary(nls1)
 summary(model)
 ```
 
-```{r, fig.height = 10, fig.width =}
-
-corr_data <- corr_data %>%
-  mutate(pred = predict(nls1, .))
-
+```{r, fig.height = 10, fig.width = 8, message = FALSE}
 MidGrid <- expand.grid(KDA = seq(0,5, length.out = 501), MID = c(TRUE), TOP = FALSE, ADC = FALSE, SUPPORT = FALSE, JUNGLE = FALSE)
 MidGrid$WinRate <- predict(nls1, MidGrid)
 JungleGrid <- expand.grid(KDA = seq(0,5, length.out = 501), MID = FALSE, TOP = FALSE, ADC = FALSE, SUPPORT = FALSE, JUNGLE = TRUE)
@@ -288,21 +293,15 @@ plot2b <- corr_data %>% filter(TOP == TRUE) %>%
 
 pw <- (plot1a & plot1b) / (plot1c) / (plot2a & plot2b) 
 
-pw
+pw + plot_annotation(
+  title = "Quadratic Regression of KDA and Winrate",
+  subtitle = "Seperated by Role",
+  caption = "Support has a strong negative coefficient for the 2nd degree, emphasizing that support sees lower payoffs than other roles for high KDA."
+)
 ```
 
 
-
 ```{r}
-MidGrid <- expand.grid(KDA = seq(0,5, length.out = 501), MID = c(TRUE), TOP = FALSE, ADC = FALSE, SUPPORT = FALSE, JUNGLE = FALSE)
-MidGrid$WinRate <- predict(nls1, MidGrid)
-
-plot1a <- corr_data %>% filter(MID == TRUE) %>%
-  ggplot(mapping = aes(x = KDA, y = WinRate)) + 
-  geom_point(alpha = 0.1) + 
-  geom_line(data = MidGrid, mapping = aes(x = KDA, y = WinRate), color = "blue") + 
-  ggtitle("Mid") 
 
 
-plot1a
 ```
