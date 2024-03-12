@@ -30,9 +30,6 @@ leaguedf$Tier = as.factor(leaguedf$Tier) %>%
 stats <- leaguedf %>% group_by(Name) %>%
   summarize(sdWinRate = sd(WinRate), sdPickBanRate = sd(PickBanRate))
 leaguedf <- inner_join(stats, leaguedf, 'Name')
-
-leaguedfRole <- leaguedf %>%
-  mutate(Role = case_when(Role == "Adc" ~ "Attack Damage Carry", TRUE ~ str_to_title(Role)))
 ```
 
 ```{r}
@@ -42,14 +39,14 @@ Mode <- function(x) {
   ux[which.max(tabulate(match(x, ux)))]
 }
 
-leaguedfRole %>%
+leaguedf %>%
   group_by(Name) %>% filter(Class != "NULL") %>%
   ggplot() + geom_point(mapping=aes(x=sdWinRate, y=sdPickBanRate, color = Class)) + facet_wrap(~ Role) + xlab("Standard Deviation of Win Rate") + ylab("Standard Deviation of Pick Ban Rate") + ggtitle("Volatility of Champions")
 ```
 
 ```{r, fig.height = 15, fig.width = 10}
 #Question 9: Tier Prediction
-Tier_Color <- c(God = "#abd63d", S = "#bc0a7d",A =  "lightblue",B =  "purple", C = "yellow", D = "red")
+Tier_Color <- c(God = "#abd63d", S ="lightblue",A =   "#bc0a7d",B =  "purple", C = "red", D = "yellow")
 plot1a <- leaguedf %>% ggplot(mapping = aes(x = PickBanRate)) + 
   geom_histogram(aes(fill = Tier, y = after_stat(density)), 
                  alpha = 0.3,
@@ -91,27 +88,27 @@ plot1a / plot2a / plot3a + plot_annotation(
 ```{r, fig.height = 8}
 
 #Win rate and Pick Ban Rate over time seperated by Role
-PatchRoleStats <- leaguedfRole %>% filter(Role != "Jungle") %>%
+PatchRoleStats <- leaguedf %>% filter(Role != "Jungle") %>%
   group_by(Role, Patch) %>%
   summarize(meanWinRate = mean(WinRate), meanPBRate = mean(PickBanRate),.groups='keep')
 
-plot1a <- leaguedfRole %>% filter(Role != "Jungle") %>%
+plot1a <- leaguedf %>% filter(Role != "Jungle") %>%
   ggplot() + geom_line(mapping=aes(x=Patch, y=WinRate, color=Name, alpha=0.001)) +
   geom_line(data = PatchRoleStats, mapping = aes(x=Patch, y=meanWinRate), color="black")+ 
   theme(legend.position="none") + facet_wrap( ~ Role) + ggtitle("Win Rate over Time seperated by Role") + xlab('') + ylab("")
 
-plot1b <- leaguedfRole %>% filter(Role != "Jungle") %>%
+plot1b <- leaguedf %>% filter(Role != "Jungle") %>%
   ggplot() + 
   geom_line(mapping=aes(x=Patch, y=PickBanRate, color=Name, alpha=0.001)) + 
   geom_line(data = PatchRoleStats, mapping=aes(x=Patch, y=meanPBRate), color="black") + 
   theme(legend.position="above") + facet_wrap( ~ Role) + ggtitle("PBRate over Time Seperated by Role") + xlab('') + ylab("")
 #Win Rate and Pick Ban Rate over Time for just Heimerdinger seperated by Role
-plot2a <- leaguedfRole %>% filter(Name == "Heimerdinger") %>%
+plot2a <- leaguedf %>% filter(Name == "Heimerdinger") %>%
   ggplot() + geom_line(mapping = aes(x = Patch, y = WinRate, alpha=0.5), color="green") + 
   geom_line(data = PatchRoleStats, mapping=aes(x=Patch, y=meanWinRate), color="black") + 
   facet_wrap(~ Role) + theme(legend.position="none") + xlab("Patch") + ylab("")
 
-plot2b <- leaguedfRole %>% filter(Name == "Heimerdinger") %>%
+plot2b <- leaguedf %>% filter(Name == "Heimerdinger") %>%
   ggplot() + geom_line(mapping = aes(x = Patch, y = PickBanRate), color="green") + 
   geom_line(data = PatchRoleStats, mapping=aes(x=Patch, y=meanPBRate), color="black") + 
   facet_wrap("Role") + theme(legend.position="none") + scale_x_discrete("Patch", labels = 1:24) + ylab('')
@@ -181,9 +178,9 @@ PbrCorrelation %>% filter(Champion2 %in% c("Tahm Kench Support", "Senna Support"
   geom_text(aes(label = label), na.rm = TRUE, hjust = -0.1, size = 3) 
 ```
 
-```{r, warning = F, fig.height = 24, fig.width = 20}
+```{r, warning = F, fig.height = 20, fig.width = 10}
 #Correlation Comparisons!
-
+#Probably change to hex or something better for density than a scatter
 
 wrCorr <- MakeCorrelationDf(varname = "WinRate")
 pickCorr<- MakeCorrelationDf(varname = "PickRate")
@@ -438,6 +435,26 @@ pw + plot_annotation(
 ```
 
 
-```{r}
+```{r, message = F}
+RoleByClass <- leaguedf %>%
+  mutate(PlayRate = RoleRate * PickRate / 2) %>% #We divide by 2 because there are two of each role in every game.
+  group_by(Patch, Role, Class) %>%
+  summarize(Percent = sum(PlayRate), WinRate = mean(WinRate)) %>%
+  ungroup()
+
+head(RoleByClass, 5) #Note that the sum of playrate will not = 1, as there are champions that are played in each role that aren't represented in the dataset, because of low play rates.
+```
+
+```{r, fig.width= 10}
+plot1a <- RoleByClass %>% 
+  ggplot() + 
+  geom_boxplot(mapping = aes(x = Role, color = Class, y = Percent)) + 
+  labs(title = "Class Visibility", y = "Visibility", x = "")
+plot2a <- RoleByClass %>%
+  ggplot() + 
+  geom_boxplot(mapping = aes(x = Role, color = Class, y = WinRate)) + 
+  labs(title = "Class Winrate", y = "Mean Win Rate by Patch", x = "")
+plot1a + plot2a + plot_annotation(title = "Boxplots analyzing Role and Class relationships with pickrate",
+                                  caption = "You can see that Marksman is consisently heavily played in ADC (> 80%) yet the mean win rate falls lower than Mage at every patch.")
 
 ```
