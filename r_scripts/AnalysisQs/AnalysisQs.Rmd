@@ -11,6 +11,8 @@ library(patchwork)
 library(gganimate)
 library(plotly)
 library(reshape2)
+library(cowplot)
+library(ggpubr)
 ```
 
 ```{r}
@@ -18,8 +20,11 @@ leaguedf <- read_csv('../../data_sets/S13LeagueOfLegendsData.csv',
                       col_types=c('c', 'c', 'c', 'c', 'c', 'd', 'd', 'd', 'd', 'd', 'd', 'd', 'c'), 
                       col_names=c('rowno', 'Name', 'Class', 'Role', 'Tier', 'Score', 'Trend', "WinRate", "RoleRate", "PickRate", "BanRate", 'KDA', 'Patch'), skip=1) %>%
   column_to_rownames("rowno") %>% 
-  mutate(PickBanRate = PickRate + BanRate, Patch = as.numeric(str_replace(Patch, '(.*?)_(.*?)', ''))) %>%
-  select(-c(PickRate, BanRate)) 
+  mutate(PickBanRate = PickRate + BanRate, 
+         Patch = as.numeric(str_replace(Patch, '(.*?)_(.*?)', '')), 
+         Role = str_to_title(Role))
+leaguedf$Tier = as.factor(leaguedf$Tier) %>%
+  fct_relevel(c("God", "S", "A", "B", "C", "D"))
 
 
 stats <- leaguedf %>% group_by(Name) %>%
@@ -27,11 +32,11 @@ stats <- leaguedf %>% group_by(Name) %>%
 leaguedf <- inner_join(stats, leaguedf, 'Name')
 
 leaguedfRole <- leaguedf %>%
-  mutate(Role = case_when(Role == "ADC" ~ "Attack Damage Carry", TRUE ~ str_to_title(Role)))
+  mutate(Role = case_when(Role == "Adc" ~ "Attack Damage Carry", TRUE ~ str_to_title(Role)))
 ```
 
 ```{r}
-#SD by patch
+#Question 10: Volatility
 Mode <- function(x) {
   ux <- unique(x)
   ux[which.max(tabulate(match(x, ux)))]
@@ -40,6 +45,46 @@ Mode <- function(x) {
 leaguedfRole %>%
   group_by(Name) %>% filter(Class != "NULL") %>%
   ggplot() + geom_point(mapping=aes(x=sdWinRate, y=sdPickBanRate, color = Class)) + facet_wrap(~ Role) + xlab("Standard Deviation of Win Rate") + ylab("Standard Deviation of Pick Ban Rate") + ggtitle("Volatility of Champions")
+```
+
+```{r, fig.height = 15, fig.width = 10}
+#Question 9: Tier Prediction
+Tier_Color <- c(God = "#abd63d", S = "#bc0a7d",A =  "lightblue",B =  "purple", C = "yellow", D = "red")
+plot1a <- leaguedf %>% ggplot(mapping = aes(x = PickBanRate)) + 
+  geom_histogram(aes(fill = Tier, y = after_stat(density)), 
+                 alpha = 0.3,
+                 bins = 50, color = "black") + 
+  geom_density(mapping = aes(fill = Tier), alpha = 0.25) + 
+  scale_y_continuous(name = "Density", sec.axis = sec_axis(~.*length(leaguedf), name = "Count")) + 
+  facet_wrap(~ Tier) +
+  theme(legend.position = "none") + 
+  labs(title = "Faceted by Tier", x = "Pick Ban Rate", y = "Density") + 
+  scale_fill_manual(values = Tier_Color)
+
+plot2a <- leaguedf %>%
+  ggplot(mapping = aes(x = PickBanRate)) + 
+  geom_histogram(aes(fill = Tier, y = after_stat(density)), 
+                 alpha = 0.3,
+                 color = "black",
+                 position = "identity",
+                 bins = 50) + 
+  geom_density(mapping = aes(fill = Tier), alpha = 0.25) + 
+  labs(title = "Complete Plot", x = "Pick Ban Rate", y = "Density") + 
+  scale_y_continuous(name = "Density", sec.axis = sec_axis(~.*length(leaguedf), name = "Count")) +
+  scale_fill_manual(values = Tier_Color)
+
+plot3a <- leaguedf%>% 
+  ggplot(mapping = aes(x = PickBanRate)) + 
+  geom_histogram(aes(fill = Tier), alpha = 0.3, color = "black") + 
+  labs(title = "Stacked Histogram", x = "Pick Ban Rate", y = "Count") + 
+  scale_fill_manual(values = Tier_Color)
+
+
+plot1a / plot2a / plot3a + plot_annotation(
+  title = "Tier Distribution with Pick Ban Rate",
+  subtitle = "Histogram overlayed with density plot",
+  caption = "You can see that D and C tiers are very close to each other, with C only being slightly ahead. \nThe others are more spread out, and God has a section that is almost entirely it's own."
+)
 ```
 
 
@@ -82,43 +127,135 @@ patched + plot_annotation(
 
 Is this useful?????? What do you gain from it??
 
+```{r, echo = F}
+
+
+MakeCorrelationDf <- function(varname, outputname = varname) {
+  head(leaguedf)
+  tempdf <- leaguedf %>%
+    pivot_wider(id_cols = c("Name", "Role"), names_from = "Patch", values_from = varname) %>%
+    mutate(ID = paste(Name, Role, sep = ' ')) %>%
+    select(-c(1, 2)) %>%
+    na.omit()
+  NameList <- tempdf$ID
+  
+  tempdf <- tempdf %>%
+    t() %>%
+    as_tibble() %>%
+    filter(row_number() < n()) %>%
+    mutate_if(is.character, as.numeric)
+
+  
+  colnames(tempdf) <- NameList
+  tempdf <- as_tibble(cor(tempdf))
+  rownames(tempdf) <- colnames(tempdf)
+  tempdf <- tempdf %>%
+    rownames_to_column(var = "Champion1") %>%
+    gather(key = "Champion2", value = !!paste(outputname, "Correlation", sep = ''), -Champion1) %>%
+    filter(!(.by = Champion1 == Champion2))
+  
+  return(tempdf)
+}
+```
+
+
 ```{r, warning = F}
-#Covariation of PBR for champions.
-
-Spread_Data <- leaguedf %>% 
-  pivot_wider(id_cols = c('Name', 'Role'), names_from='Patch', values_from='PickBanRate') %>%
-  mutate(ID = paste(Name, Role, sep='.')) %>%
-  select(-c(1,2)) %>%
-  na.omit()
-
-NameList = Spread_Data$ID
-
-Spread_Data <- as_tibble(t(Spread_Data)) %>%
-  filter(row_number() <= n() - 1) %>%
-  mutate_if(is.character, as.numeric)
-
-colnames(Spread_Data) <- NameList
-CorrMat <- as_tibble(cor(Spread_Data))
-rownames(CorrMat) <- colnames(CorrMat)
-
-df <- CorrMat %>% rownames_to_column(var = "Champion1") %>% select(Senna.SUPPORT, `Tahm Kench.SUPPORT`, Ashe.ADC, Champion1) %>%
-  gather(key = "Champion", value = "Correlation", -Champion1) %>%
-  filter(Correlation < 1) %>%
-  group_by(Champion) %>%
-  arrange(Correlation) %>%
+#Correlation of PBR for champions.
+#TODO: Add Correlation for winrate, does it have any impact?
+PbrCorrelation <- MakeCorrelationDf("PickBanRate", "Pbr") %>%
+  group_by(Champion2) %>%
+  arrange(PbrCorrelation) %>%
   mutate(label = case_when(
     row_number() <= 1 ~ str_to_title(str_replace(Champion1, '\\.', ' ')),
     row_number() > n() - 1 ~ str_to_title(str_replace(Champion1, '\\.', ' ')), # This adds a Space into the name where the . is  and uncapitalizes the second role
-    Champion == "Tahm Kench.SUPPORT" & Correlation > 0.68 ~ "Senna Support", # This is an outlier so labeling is justified, especially since it helps show the part of the plot
+    Champion2 == "Tahm Kench.Support" & PbrCorrelation > 0.68 ~ "Senna Support", # This is an outlier so labeling is justified, especially since it helps show the part of the plot
     TRUE ~ as.character(NA)
   )) 
 
-ggplot(data = df, mapping = aes(x=Champion, y = Correlation)) + 
+PbrCorrelation %>% filter(Champion2 %in% c("Tahm Kench Support", "Senna Support", "Ashe Adc")) %>% 
+  ggplot(mapping = aes(x=Champion2, y = PbrCorrelation)) + 
   geom_boxplot() + 
   ggtitle("PBR Correlation Boxplot")+ 
-  scale_x_discrete(labels = c("Ashe ADC", "Senna Support", "Tahm Kench Support")) + 
+  scale_x_discrete(labels = c("Ashe Adc", "Senna Support", "Tahm Kench Support")) + 
   labs(x = "", y = "Pick Ban Rate Correlation Coefficient", caption = "Minimum and Maximum corelation coefficients are annotated, as well as Senna Support for Tahm Kench Support in order\n to best visualize how the strength of certain counters, replacements, and synergies effect Pick Ban Rate.")  + 
   geom_text(aes(label = label), na.rm = TRUE, hjust = -0.1, size = 3) 
+```
+
+```{r, warning = F, fig.height = 24, fig.width = 20}
+#Correlation Comparisons!
+
+
+wrCorr <- MakeCorrelationDf(varname = "WinRate")
+pickCorr<- MakeCorrelationDf(varname = "PickRate")
+banCorr <- MakeCorrelationDf(varname = "BanRate")
+rule <- join_by(Champion1 == Champion1, Champion2 == Champion2)
+
+TotalCorr <- inner_join(PbrCorrelation, wrCorr, by = rule) %>%
+  select(-"label") %>%
+  inner_join(pickCorr, rule) %>%
+  inner_join(banCorr, rule)
+
+plot1a <- TotalCorr %>%
+  ggplot() + 
+  geom_point(mapping = aes(x = WinRateCorrelation, y = PbrCorrelation), color = "#dba22e", size = 0.5) + 
+  labs(title = "Overall Plot", x = "", y = "Pick Ban Rate Correlation")
+plot1b <- TotalCorr %>%
+  filter(grepl("Support", Champion1) & grepl("Adc", Champion2)) %>%
+  ggplot() + 
+  geom_point(mapping = aes(x = WinRateCorrelation, y = PbrCorrelation), color = "#dba22e", size = 0.5) + 
+  labs(title = "Support and Adc only", y = "", x = "")
+
+plot2a <- TotalCorr %>%
+  ggplot() + 
+  geom_point(mapping = aes(x = WinRateCorrelation, y = PickRateCorrelation), color = "#bc0a7d", size = 0.5) + 
+  labs(title = "", x = "", y = "")
+
+plot2b <- TotalCorr %>%
+  filter(grepl("Support", Champion1) & grepl("Adc", Champion2)) %>%
+  ggplot() + 
+  geom_point(mapping = aes(x = WinRateCorrelation, y = PickRateCorrelation), color = "#bc0a7d", size = 0.5) + 
+  labs(title = "", x = "", y = "")
+
+plot3a <- TotalCorr %>%
+  ggplot() + 
+  geom_point(mapping = aes(x = WinRateCorrelation, y = BanRateCorrelation), color = "#abd63d", size = 0.5) + 
+  labs(title = "", x = "]", y = "")
+
+plot3b <- TotalCorr %>%
+  filter(grepl("Support", Champion1) & grepl("Adc", Champion2)) %>%
+  ggplot() + 
+  geom_point(mapping = aes(x = WinRateCorrelation, y = BanRateCorrelation), color = "#abd63d", size = 0.5) + 
+  labs(title = "", x = "]", y = "")
+
+plot4a <- TotalCorr %>%
+  ggplot() + 
+  geom_point(mapping = aes(x = WinRateCorrelation, y = PbrCorrelation), color = "#dba22e", size = 0.5, alpha = 0.2) + 
+  geom_point(mapping = aes(x = WinRateCorrelation, y = PickRateCorrelation), color = "#bc0a7d", size = 0.5, alpha = 0.2) + 
+  geom_point(mapping = aes(x = WinRateCorrelation, y = BanRateCorrelation), color = "#abd63d", size = 0.5, alpha = 0.2) + 
+  labs(x = "Win Rate Correlation", y = "")
+
+plot4b <- TotalCorr %>%
+  filter(grepl("Support", Champion1) & grepl("Adc", Champion2)) %>%
+  ggplot() + 
+  geom_point(mapping = aes(x = WinRateCorrelation, y = PbrCorrelation, color = 'a'), size = 0.5, apha = 0.2) + 
+  geom_point(mapping = aes(x = WinRateCorrelation, y = PickRateCorrelation, color = 'b'), size = 0.5, alpha = 0.2) + 
+  geom_point(mapping = aes(x = WinRateCorrelation, y = BanRateCorrelation, color = 'c'), size = 0.5, alpha = 0.2) + 
+  labs(x = "Win Rate Correlation",y = "") + 
+  scale_color_manual(values = c("a" = "#dba22e", "b" = "#bc0a7d", "c" = "#abd63d"), name = "Correlation", labels = c("Pick Ban Rate", "Ban Rate", "Pick Rate"), guide = "legend") + 
+  theme(legend.position = "right")
+
+design = "
+129
+349
+569
+789"
+
+pw <- plot1a + plot1b + plot2a + plot2b + plot3a + plot3b + plot4a + plot4b + plot_layout(design = design, guides = "collect") + plot_annotation(
+  title = "Correlation Comparisons",
+  subtitle = "For Pick Ban Rate, Pick Rate, and Ban rate compared to Win Rate"
+)
+
+pw
 ```
 
 ```{r, eval=FALSE, echo = F}
@@ -140,7 +277,7 @@ annotations = list(
   list( 
     x = 0.015,  
     y = 1.0,  
-    text = "ADC",  
+    text = "Adc",  
     xref = "paper",  
     yref = "paper",  
     xanchor = "center",  
@@ -233,14 +370,14 @@ corr_data <- leaguedf %>%
               values_fn = function(x) TRUE,
               values_fill = FALSE)
 
-model <- nls(WinRate ~ a*KDA + b*TOP*KDA^2 + c*MID*KDA^2 + d*JUNGLE*KDA^2 + e*SUPPORT*KDA^2 + f*ADC*KDA^2 + g, data = corr_data, start = list(a = 0.01, b = 0.01, c = 0.01, d = 0.01, e = 0.01, f = 0.01, g = 0.4))
+model <- nls(WinRate ~ a*KDA + b*Top*KDA^2 + c*Mid*KDA^2 + d*Jungle*KDA^2 + e*Support*KDA^2 + f*Adc*KDA^2 + g, data = corr_data, start = list(a = 0.01, b = 0.01, c = 0.01, d = 0.01, e = 0.01, f = 0.01, g = 0.4))
 
-predict_wr <- function(kda, top, mid, jungle, support, adc) {
-  predict(model, newdata = data.frame(KDA = kda, TOP = top, MID = mid, JUNGLE = jungle, SUPPORT = support, ADC = adc))
+predict_wr <- function(kda, Top, Mid, Jungle, Support, Adc) {
+  predict(model, newdata = data.frame(KDA = kda, Top = Top, Mid = Mid, Jungle = Jungle, Support = Support, Adc = Adc))
 }
 
 train_control <- trainControl(method = "repeatedcv", number = 25, repeats = 5)
-nls1 <- train(WinRate ~ predict_wr(KDA, TOP, MID, JUNGLE, SUPPORT, ADC), data = corr_data,
+nls1 <- train(WinRate ~ predict_wr(KDA, Top, Mid, Jungle, Support, Adc), data = corr_data,
                                          method = "lm", 
                                          trControl = train_control,
                                          preProcess = c("center", "scale"))
@@ -250,42 +387,42 @@ summary(model)
 ```
 
 ```{r, fig.height = 10, fig.width = 8, message = FALSE}
-MidGrid <- expand.grid(KDA = seq(0,5, length.out = 501), MID = c(TRUE), TOP = FALSE, ADC = FALSE, SUPPORT = FALSE, JUNGLE = FALSE)
+MidGrid <- expand.grid(KDA = seq(0,5, length.out = 501), Mid = c(TRUE), Top = FALSE, Adc = FALSE, Support = FALSE, Jungle = FALSE)
 MidGrid$WinRate <- predict(nls1, MidGrid)
-JungleGrid <- expand.grid(KDA = seq(0,5, length.out = 501), MID = FALSE, TOP = FALSE, ADC = FALSE, SUPPORT = FALSE, JUNGLE = TRUE)
+JungleGrid <- expand.grid(KDA = seq(0,5, length.out = 501), Mid = FALSE, Top = FALSE, Adc = FALSE, Support = FALSE, Jungle = TRUE)
 JungleGrid$WinRate <- predict(nls1, JungleGrid)
-TopGrid <- expand.grid(KDA = seq(0,5, length.out = 501), MID = FALSE, TOP = T, ADC = FALSE, SUPPORT = FALSE, JUNGLE = FALSE)
+TopGrid <- expand.grid(KDA = seq(0,5, length.out = 501), Mid = FALSE, Top = T, Adc = FALSE, Support = FALSE, Jungle = FALSE)
 TopGrid$WinRate <- predict(nls1, TopGrid)
-ADCGrid <- expand.grid(KDA = seq(0,5, length.out = 501), MID = F, TOP = FALSE, ADC = T, SUPPORT = FALSE, JUNGLE = FALSE)
-ADCGrid$WinRate <- predict(nls1, ADCGrid)
-SupportGrid <- expand.grid(KDA = seq(0,5, length.out = 501), MID = F, TOP = FALSE, ADC = FALSE, SUPPORT = T, JUNGLE = FALSE)
+AdcGrid <- expand.grid(KDA = seq(0,5, length.out = 501), Mid = F, Top = FALSE, Adc = T, Support = FALSE, Jungle = FALSE)
+AdcGrid$WinRate <- predict(nls1, AdcGrid)
+SupportGrid <- expand.grid(KDA = seq(0,5, length.out = 501), Mid = F, Top = FALSE, Adc = FALSE, Support = T, Jungle = FALSE)
 SupportGrid$WinRate <- predict(nls1, SupportGrid)
 
-plot1a <- corr_data %>% filter(MID == TRUE) %>%
+plot1a <- corr_data %>% filter(Mid == TRUE) %>%
   ggplot(mapping = aes(x = KDA, y = WinRate)) + 
   geom_point(alpha = 0.1) + 
   geom_line(data = MidGrid, mapping = aes(x = KDA, y = WinRate), color = "blue") + 
   ggtitle("Mid") 
 
-plot1b <- corr_data %>% filter(ADC == TRUE) %>%
+plot1b <- corr_data %>% filter(Adc == TRUE) %>%
   ggplot(mapping = aes(x = KDA, y = WinRate)) + 
   geom_point(alpha = 0.1) + 
-  geom_line(data = ADCGrid, mapping = aes(x = KDA, y = WinRate), color = "red")+ 
-  ggtitle("ADC")
+  geom_line(data = AdcGrid, mapping = aes(x = KDA, y = WinRate), color = "red")+ 
+  ggtitle("Adc")
 
-plot1c <- corr_data %>% filter(SUPPORT == TRUE) %>%
+plot1c <- corr_data %>% filter(Support == TRUE) %>%
   ggplot(mapping = aes(x = KDA, y = WinRate)) + 
   geom_point(alpha = 0.1) + 
   geom_line(data = SupportGrid, mapping = aes(x = KDA, y = WinRate), color = "green") + 
   ggtitle("Support")
 
-plot2a <- corr_data %>% filter(JUNGLE== TRUE) %>%
+plot2a <- corr_data %>% filter(Jungle== TRUE) %>%
   ggplot(mapping = aes(x = KDA, y = WinRate)) + 
   geom_point(alpha = 0.1) + 
   geom_line(data = JungleGrid, mapping = aes(x = KDA, y = WinRate), color = "purple") + 
   ggtitle("Jungle")
 
-plot2b <- corr_data %>% filter(TOP == TRUE) %>%
+plot2b <- corr_data %>% filter(Top == TRUE) %>%
   ggplot(mapping = aes(x = KDA, y = WinRate)) + 
   geom_point(alpha = 0.1) + 
   geom_line(data = TopGrid, mapping = aes(x = KDA, y = WinRate), color = "orange") + 
@@ -296,12 +433,11 @@ pw <- (plot1a & plot1b) / (plot1c) / (plot2a & plot2b)
 pw + plot_annotation(
   title = "Quadratic Regression of KDA and Winrate",
   subtitle = "Seperated by Role",
-  caption = "Support has a strong negative coefficient for the 2nd degree, emphasizing that support sees lower payoffs than other roles for high KDA."
+  caption = "Support has a strong negative coefficient for the 2nd degree, emphasizing that Support sees lower payoffs than other roles for high KDA."
 )
 ```
 
 
 ```{r}
-
 
 ```
