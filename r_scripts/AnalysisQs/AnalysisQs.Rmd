@@ -32,7 +32,7 @@ stats <- leaguedf %>% group_by(Name) %>%
 leaguedf <- inner_join(stats, leaguedf, 'Name')
 ```
 
-```{r, fig.height = 10, message = F}
+```{r, fig.height = 10,fig.width = 10, message = F}
 #Question 10: Volatility
 Mode <- function(x) {
   ux <- unique(x)
@@ -112,7 +112,7 @@ plot1a / plot2a / plot3a + plot_annotation(
 ```
 
 
-```{r, fig.height = 8}
+```{r, fig.height = 10, fig.width= 10}
 
 #Win rate and Pick Ban Rate over time seperated by Role
 PatchRoleStats <- leaguedf %>% filter(Role != "Jungle") %>%
@@ -350,7 +350,7 @@ annotations = list(
   ))
 ```
 
-```{r, fig.height=6, fig.width=8, message = FALSE, warning = FALSE}
+```{r, fig.height=6, fig.width = 10, message = FALSE, warning = FALSE}
 leaguedf %>%
   select("Name", "PickBanRate", "WinRate", "Role", "RoleRate", "Class", "Patch") %>%
   filter(!(Class == "NULL")) %>%
@@ -410,7 +410,7 @@ summary(nls1)
 summary(model)
 ```
 
-```{r, fig.height = 10, fig.width = 8, message = FALSE}
+```{r, fig.height = 10, fig.width = 10, message = FALSE}
 MidGrid <- expand.grid(KDA = seq(0,5, length.out = 501), Mid = c(TRUE), Top = FALSE, Adc = FALSE, Support = FALSE, Jungle = FALSE)
 MidGrid$WinRate <- predict(nls1, MidGrid)
 JungleGrid <- expand.grid(KDA = seq(0,5, length.out = 501), Mid = FALSE, Top = FALSE, Adc = FALSE, Support = FALSE, Jungle = TRUE)
