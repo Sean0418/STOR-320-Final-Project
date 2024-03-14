@@ -11,14 +11,15 @@ library(tidyverse)
 library(leaps)
 library(car)
 library(lvplot)
+library(grid)
 library(gridExtra)
 ```
 
 ```{r}
-leaguedf <- read_csv('../../data_sets/S13LeagueOfLegendsData.csv')
-leaguedfKR <- read_csv('../../data_sets/S13LeagueOfLegendsDataKR.csv')
-leaguedfNA <- read_csv('../../data_sets/S13LeagueOfLegendsDataNA.csv')
-leaguedfEUW <- read_csv('../../data_sets/S13LeagueOfLegendsDataEUW.csv')
+leaguedf <- read_csv('leagueS13/S13LeagueOfLegendsData.csv')
+leaguedfKR <- read_csv('leagueS13/S13LeagueOfLegendsDataKR.csv')
+leaguedfNA <- read_csv('leagueS13/S13LeagueOfLegendsDataNA.csv')
+leaguedfEUW <- read_csv('leagueS13/S13LeagueOfLegendsDataEUW.csv')
 head(leaguedf)
 colnames(leaguedf)
 ```
@@ -64,20 +65,14 @@ ggplot(data=classRoleAgg, mapping=aes(as.factor(Class), y=`E(KDA)`)) +
   facet_wrap(~Role) +
   theme(axis.text.x =element_text(angle=90))
 
-#KDA by role
-  roleKDA <- leaguedf %>%
-    group_by(Role) %>%
-    summarize(
-      AvgKDAByRole = mean(KDA),
-      SD_KDA_role = sd(KDA)
-    )
+
   
   #average KDA by role and role%
-  ggplot(data=leaguedf) +
+roleKDA<-  ggplot(data=leaguedf) +
     geom_point(mapping=aes(x=`Role..`, y=KDA, color=Class)) +
     geom_smooth(method="lm", mapping=aes(x=`Role..`, y=KDA)) +
     facet_wrap(~Role)  +
-    ggtitle("average KDA by class, role%, and role")
+    ggtitle("average KDA by class, role%, facet by role")
   
   #distributions of KDA within roles
   ggplot(data=leaguedf) + 
@@ -93,17 +88,26 @@ ggplot(data=classRoleAgg, mapping=aes(as.factor(Class), y=`E(KDA)`)) +
     )
   
 #average KDA by class and role%
-  ggplot(data=leaguedf) +
+classKDA <- ggplot(data=leaguedf) +
     geom_point(mapping=aes(x=`Role..`, y=KDA, color=Role)) +
     geom_smooth(method="lm", mapping=aes(x=`Role..`, y=KDA)) +
     facet_wrap(~Class) +
-    ggtitle("average KDA by role, role%, and class")
+    ggtitle("average KDA by role, role%, facet by class")
   
   #distributions of KDA within roles
   ggplot(data=leaguedf) + 
     geom_lv(mapping=aes(x=Class, y=KDA))
   
+
+  
 ```
+
+```{r, fig.height=15, fig.width=10}
+grid.arrange(roleKDA, classKDA, nrow=2, 
+             top=textGrob("KDA by Class, Role and Role%\n", 
+                          gp=gpar(fontsize=20)))
+```
+
 
 ### average KDA by role, role%, and class plot, facet by role
 
@@ -130,7 +134,7 @@ Fighters have a volatile nature especially in the top role because they do more 
 ## Q2: What are the most popular champions in top lane between different servers and their performance(win rate, ban rate, pick rate) throughout the patches? 
 
 
-```{r, fig.height = 15, fig.width = 10}
+```{r,  fig.height = 15, fig.width = 10}
 patch <- unique(leaguedf$Patch)
 
 patchFactor <- factor(patch)
@@ -154,25 +158,56 @@ topNA1 <- ggplot(data=(leaguedfNA[leaguedfNA$Name %in% topNA, ] %>%
   geom_line(mapping=aes(x=factor(Patch, levels = patchFactor), y=`Win..`, color=Name, 
                         group=Name)) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  ylab("Win Rate") + xlab("Patch")
+  ylab("Win Rate") + xlab("Patch") +
+  ggtitle("NA TOP role Win Rate by Patch")
 
 topNA2 <- ggplot(data=(leaguedfNA[leaguedfNA$Name %in% topNA, ] %>% 
          filter(Role=="TOP") %>% arrange(Name))) +
   geom_line(mapping=aes(x=factor(Patch, levels = patchFactor), y=`Ban..`, color=Name, 
                         group=Name)) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
-  ylab("Ban Rate") + xlab("Patch")
+  ylab("Ban Rate") + xlab("Patch") +
+  ggtitle("NA TOP role Ban Rate by Patch")
 
 topNA3 <- ggplot(data=(leaguedfNA[leaguedfNA$Name %in% topNA, ] %>% 
          filter(Role=="TOP") %>% arrange(Name))) +
   geom_line(mapping=aes(x=factor(Patch, levels = patchFactor), y=`Pick..`, color=Name, 
                         group=Name)) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
-  ylab("Pick Rate") + xlab("Patch")
-
-grid.arrange(topNA1, topNA2, topNA3, nrow=3)
+  ylab("Pick Rate") + xlab("Patch") +
+  ggtitle("NA TOP role Pick Rate by Patch")
 
 ```
+
+```{r, fig.height=10, fig.width=15}
+topNApoint1 <- ggplot(data=(leaguedfNA[leaguedfNA$Name %in% topNA, ] %>% 
+         filter(Role=="TOP") %>% arrange(Name))) +
+  geom_count(mapping=aes(x=factor(Patch, levels = patchFactor), y=Name, size=`Win..`, 
+                         color=Name)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Win Rate") + xlab("Patch") +
+  ggtitle("NA TOP role Win Rate by Patch")
+
+topNApoint2 <- ggplot(data=(leaguedfNA[leaguedfNA$Name %in% topNA, ] %>% 
+         filter(Role=="TOP") %>% arrange(Name))) +
+  geom_count(mapping=aes(x=factor(Patch, levels = patchFactor), y=Name, size=`Ban..`, 
+                         color=Name)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Win Rate") + xlab("Patch") +
+  ggtitle("NA TOP role Ban Rate by Patch")
+
+topNApoint3 <- ggplot(data=(leaguedfNA[leaguedfNA$Name %in% topNA, ] %>% 
+         filter(Role=="TOP") %>% arrange(Name))) +
+  geom_count(mapping=aes(x=factor(Patch, levels = patchFactor), y=Name, size=`Pick..`, 
+                         color=Name)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Win Rate") + xlab("Patch") +
+  ggtitle("NA TOP role Pick Rate by Patch")
+
+grid.arrange(topNApoint1, topNApoint2, topNApoint3, nrow=3)
+```
+
+
 
 In 13_14 patch in the NA server, Aatrox's winrate skyrocked with respect to the previous patch and his ban rate and pick rate responded the same way. 
 
@@ -180,7 +215,7 @@ In general, other than Aatrox, the ban rate and the pick rate tends to be fairly
 
 NA server has a really casual environment that the players are not quite as sensitive to meta as some other servers. This server also tends to be regarded as one of the worst servers in terms of skill. 
 
-```{r, fig.height = 15, fig.width = 10}
+```{r,  fig.height = 15, fig.width = 10}
 AvgPickRateKR <- leaguedfKR%>%
   select(-1) %>%
   group_by(Name, Role) %>%
@@ -200,26 +235,55 @@ topKR1 <- ggplot(data=(leaguedfKR[leaguedfKR$Name %in% topKR, ] %>%
   geom_line(mapping=aes(x=factor(Patch, levels = patchFactor), y=`Win..`, color=Name, 
                         group=Name)) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  ylab("Win Rate") + xlab("Patch")
+  ylab("Win Rate") + xlab("Patch") +
+  ggtitle("KR TOP role Win Rate by Patch")
 
 topKR2 <- ggplot(data=(leaguedfKR[leaguedfKR$Name %in% topKR, ] %>% 
          filter(Role=="TOP") %>% arrange(Name))) +
   geom_line(mapping=aes(x=factor(Patch, levels = patchFactor), y=`Ban..`, color=Name, 
                         group=Name)) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
-  ylab("Ban Rate") + xlab("Patch")
+  ylab("Ban Rate") + xlab("Patch") +
+  ggtitle("KR TOP role Ban Rate by Patch")
 
 topKR3 <- ggplot(data=(leaguedfKR[leaguedfKR$Name %in% topKR, ] %>% 
          filter(Role=="TOP") %>% arrange(Name))) +
   geom_line(mapping=aes(x=factor(Patch, levels = patchFactor), y=`Pick..`, color=Name, 
                         group=Name)) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
-  ylab("Pick Rate") + xlab("Patch")
-
-grid.arrange(topKR1, topKR2, topKR3, nrow=3)
-
+  ylab("Pick Rate") + xlab("Patch") +
+  ggtitle("KR TOP role Pick Rate by Patch")
 
 ```
+
+```{r, fig.height=10, fig.width=15}
+topKRpoint1 <- ggplot(data=(leaguedfKR[leaguedfKR$Name %in% topKR, ] %>% 
+         filter(Role=="TOP") %>% arrange(Name))) +
+  geom_count(mapping=aes(x=factor(Patch, levels = patchFactor), y=Name, size=`Win..`, 
+                         color=Name)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Win Rate") + xlab("Patch") +
+  ggtitle("KR TOP role Win Rate by Patch")
+
+topKRpoint2 <- ggplot(data=(leaguedfKR[leaguedfKR$Name %in% topKR, ] %>% 
+         filter(Role=="TOP") %>% arrange(Name))) +
+  geom_count(mapping=aes(x=factor(Patch, levels = patchFactor), y=Name, size=`Ban..`, 
+                         color=Name)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Win Rate") + xlab("Patch") +
+  ggtitle("KR TOP role Ban Rate by Patch")
+
+topKRpoint3 <- ggplot(data=(leaguedfKR[leaguedfKR$Name %in% topKR, ] %>% 
+         filter(Role=="TOP") %>% arrange(Name))) +
+  geom_count(mapping=aes(x=factor(Patch, levels = patchFactor), y=Name, size=`Pick..`, 
+                         color=Name)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Win Rate") + xlab("Patch") +
+  ggtitle("KR TOP role Pick Rate by Patch")
+
+grid.arrange(topKRpoint1, topKRpoint2, topKRpoint3, nrow=3)
+```
+
 
 In 13_14 patch in the KR server, Aatrox's winrate skyrocked with respect to the previous patch and his ban rate and pick rate responded the same way. 
 
@@ -234,7 +298,7 @@ Renekton's ban rate and pick rate corresponds really well with his win rate that
 Korea server is the most competitive server. Their players tend to have much better mechanics at champions than other regions so they fight a lot. Because of its competitiveness, the players tend to really pay attention to meta and adjust their bans and picks. 
 
 
-```{r, fig.height = 15, fig.width = 10}
+```{r,  fig.height = 15, fig.width = 10}
 AvgPickRateEUW <- leaguedfEUW%>%
   select(-1) %>%
   group_by(Name, Role) %>%
@@ -254,25 +318,55 @@ topEUW1 <- ggplot(data=(leaguedfEUW[leaguedfEUW$Name %in% topEUW, ] %>%
   geom_line(mapping=aes(x=factor(Patch, levels = patchFactor), y=`Win..`, color=Name, 
                         group=Name)) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  ylab("Win Rate") + xlab("Patch")
+  ylab("Win Rate") + xlab("Patch") +
+  ggtitle("EUW TOP role Win Rate by Patch")
 
 topEUW2 <- ggplot(data=(leaguedfEUW[leaguedfEUW$Name %in% topEUW, ] %>% 
          filter(Role=="TOP") %>% arrange(Name))) +
   geom_line(mapping=aes(x=factor(Patch, levels = patchFactor), y=`Ban..`, color=Name, 
                         group=Name)) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
-  ylab("Ban Rate") + xlab("Patch")
+  ylab("Ban Rate") + xlab("Patch") +
+  ggtitle("EUW TOP role Ban Rate by Patch")
 
 topEUW3 <- ggplot(data=(leaguedfEUW[leaguedfEUW$Name %in% topEUW, ] %>% 
          filter(Role=="TOP") %>% arrange(Name))) +
   geom_line(mapping=aes(x=factor(Patch, levels = patchFactor), y=`Pick..`, color=Name, 
                         group=Name)) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
-  ylab("Pick Rate") + xlab("Patch")
+  ylab("Pick Rate") + xlab("Patch")+
+  ggtitle("KR TOP role Pick Rate by Patch")
 
-grid.arrange(topEUW1, topEUW2, topEUW3, nrow=3)
+
 ```
 
+```{r, fig.height=15, fig.width=15}
+topEUWpoint1 <- ggplot(data=(leaguedfEUW[leaguedfEUW$Name %in% topEUW, ] %>% 
+         filter(Role=="TOP") %>% arrange(Name))) +
+  geom_count(mapping=aes(x=factor(Patch, levels = patchFactor), y=Name, size=`Win..`, 
+                         color=Name)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Win Rate") + xlab("Patch") +
+  ggtitle("EUW TOP role Win Rate by Patch")
+
+topEUWpoint2 <- ggplot(data=(leaguedfEUW[leaguedfEUW$Name %in% topEUW, ] %>% 
+         filter(Role=="TOP") %>% arrange(Name))) +
+  geom_count(mapping=aes(x=factor(Patch, levels = patchFactor), y=Name, size=`Ban..`, 
+                         color=Name)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Win Rate") + xlab("Patch") +
+  ggtitle("EUW TOP role Ban Rate by Patch")
+
+topEUWpoint3 <- ggplot(data=(leaguedfEUW[leaguedfEUW$Name %in% topEUW, ] %>% 
+         filter(Role=="TOP") %>% arrange(Name))) +
+  geom_count(mapping=aes(x=factor(Patch, levels = patchFactor), y=Name, size=`Pick..`, 
+                         color=Name)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Win Rate") + xlab("Patch") +
+  ggtitle("EUW TOP role Pick Rate by Patch")
+
+grid.arrange(topEUWpoint1, topEUWpoint2, topEUWpoint3, nrow=3)
+```
 In 13_14 patch in the EUW server, Aatrox's winrate skyrocked with respect to the previous patch and his ban rate and pick rate responded the same way. 
 
 Darius' win rate fluctuated throughout the season, but the ban rate and pick rate did not necessarily respond to these fluctuations. 
@@ -286,3 +380,17 @@ Renekton's win rate went up throughout the season and so is his pick rate and ba
 
 EUW is a big server with a big population. They tend to have a more proactive playstyle that they would try to make plays instead of waiting for things to happen. This server tends to be better at making macro decisions (taking objectives on the map). 
 
+#### Summary of the 3 servers
+
+```{r, fig.height = 45, fig.width = 10}
+#the graph to include for EDA
+grid.arrange(topNA1, topNA2, topNA3, 
+             topKR1, topKR2, topKR3, 
+             topEUW1, topEUW2, topEUW3, 
+             nrow=9, 
+             top=textGrob("5 Most Popular Champions for the TOP role in 3 servers\n", 
+                          gp=gpar(fontsize=20)))
+```
+
+
+Other than K'sante (tank), all these picks are fighters. All these picks are good at early to mid game skirmishes and exerting pressure on the map. And K'sante's ultimate ability turns him into a fighter temporarily. Because they are fighters, they have much more carry potential because of the amount of damage they can dish out. 
