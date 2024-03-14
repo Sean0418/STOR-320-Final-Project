@@ -1,0 +1,288 @@
+---
+title: "Analysis- Sean Shen"
+author: "Sean"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(leaps)
+library(car)
+library(lvplot)
+library(gridExtra)
+```
+
+```{r}
+leaguedf <- read_csv('leagueS13/S13LeagueOfLegendsData.csv')
+leaguedfKR <- read_csv('leagueS13/S13LeagueOfLegendsDataKR.csv')
+leaguedfNA <- read_csv('leagueS13/S13LeagueOfLegendsDataNA.csv')
+leaguedfEUW <- read_csv('leagueS13/S13LeagueOfLegendsDataEUW.csv')
+head(leaguedf)
+colnames(leaguedf)
+```
+
+
+## Q1: Can role %, class and role to predict the KDA of a player?
+
+
+```{r}
+predKDA <- lm(KDA~Class + Role + `Role..`, data= leaguedf)
+summary(predKDA)
+
+anova(predKDA)
+```
+
+With Role, Role%, and class as predictors, we can explain up to 59.5% of the variability in KDA which makes sense as the rest of the variability could be attributed to the difference in skill/performance of players and other factors. All of the predictors are signficant at a 5% level for predicting KDA. 
+
+In the summary, each of the categories such as roles and class changes the intercept of the linear regression to predict the KDA. For example, if we are looking at a TOP role and a Fighter class, we would subtract 0.45424 and 0.07878 from the intercept. In the ANOVA test, we see that every additional predictor is significant in explaining more of the variation in the data compared to the previous subset of predictors (since the test is nested). 
+
+```{r}
+#distribution of KDA by role and class
+ggplot(data=leaguedf) +
+  geom_lv(mapping=aes(x=Class, y=KDA)) +
+  facet_wrap(~Role) +
+  theme(axis.text.x =element_text(angle=90))
+
+classRoleAgg <- leaguedf %>%
+  group_by(Class, Role) %>%
+  summarize(
+    `E(WinRate)` = mean(Win..),
+    `Var(WinRate)`=sd(Win..),
+    `E(KDA)` = mean(KDA),
+    `Var(KDA)`=sd(KDA)
+  ) %>%
+  ungroup() 
+  
+
+head(classRoleAgg)
+
+#expected KDA by role and class
+ggplot(data=classRoleAgg, mapping=aes(as.factor(Class), y=`E(KDA)`)) +
+  geom_bar(stat="identity") +
+  facet_wrap(~Role) +
+  theme(axis.text.x =element_text(angle=90))
+
+#KDA by role
+  roleKDA <- leaguedf %>%
+    group_by(Role) %>%
+    summarize(
+      AvgKDAByRole = mean(KDA),
+      SD_KDA_role = sd(KDA)
+    )
+  
+  #average KDA by role and role%
+  ggplot(data=leaguedf) +
+    geom_point(mapping=aes(x=`Role..`, y=KDA, color=Class)) +
+    geom_smooth(method="lm", mapping=aes(x=`Role..`, y=KDA)) +
+    facet_wrap(~Role)  +
+    ggtitle("average KDA by class, role%, and role")
+  
+  #distributions of KDA within roles
+  ggplot(data=leaguedf) + 
+    geom_lv(mapping=aes(x=Role, y=KDA))
+
+
+#KDA by class
+  classKDA <- leaguedf %>%
+  group_by(Class) %>%
+    summarize(
+      AvgKDAByClass = mean(KDA),
+      SD_KDA_Class = sd(KDA)
+    )
+  
+#average KDA by class and role%
+  ggplot(data=leaguedf) +
+    geom_point(mapping=aes(x=`Role..`, y=KDA, color=Role)) +
+    geom_smooth(method="lm", mapping=aes(x=`Role..`, y=KDA)) +
+    facet_wrap(~Class) +
+    ggtitle("average KDA by role, role%, and class")
+  
+  #distributions of KDA within roles
+  ggplot(data=leaguedf) + 
+    geom_lv(mapping=aes(x=Class, y=KDA))
+  
+```
+
+### average KDA by role, role%, and class plot, facet by role
+
+In the average KDA by role and role% plot, we can see that there is a very positive correlation between KDA and role percentage for support, which means that for the picks that are designed to be support tends to yield better results than the off-meta picks. Since supports acquire a lot less gold than any other roles, the picks that are designed for the lack of gold will be rewarded. 
+
+There are weak positive correlations between KDA and role% in jungle and mid. In this case, the traditional picks are still rewarded. 
+
+In the top role, there is a slightly negative correlations between KDA and role%. Top picks tend to be the frontline which would lower their KDA. Also since top is a 1v1 role in a relatively isolated environment, counterpicks are also available to lower the KDA because off-meta picks could also be a hard counter to certain picks. Top matchups tend to be more unplayable which leads to significant lower KDAs. Most of the classes in top other than the fighters have a positive trend between KDA and role%. 
+
+Just like the top role, adc also have the problem with survival in fights as they only build damage items and are the most targeted/prioritized. Whereas if one picked certain nontraditional picks, it can increase the survival rate depending on the team composition (not needing a DPS threat). For example, in the adc facet, there are a lot of green dots (mages) with higher KDAs than the traditional marksman despite the low pick rate. 
+
+We will see much clearer why some of these correlations between KDA and role% is negative when we facet by class.
+
+
+### average KDA by role, role%, and class plot, facet by class
+
+Assassin, mage, marksman, support, and tank all have positive correlations between KDA and role%. Tank, albeit also found in the top role, tend to be able to survive more pressure than fighters given their survivability. A lot of tanks also were not played in top but rather in other roles. 
+
+Fighters have a volatile nature especially in the top role because they do more damage and have much less survivability. But say one side is behind in gold, the fighter would also lose damage and therefore result in a terrible KDA. 
+
+
+
+
+## Q2: What are the most popular champions in top lane between different servers and their performance(win rate, ban rate, pick rate) throughout the patches? 
+
+
+```{r}
+patch <- unique(leaguedf$Patch)
+
+patchFactor <- factor(patch)
+
+AvgPickRateNA <- leaguedfNA%>%
+  select(-1) %>%
+  group_by(Name, Role) %>%
+  summarize(
+    TotalAvgPickRate=mean(`Pick..`), 
+    TotalAvgWinRate=mean(`Win..`), 
+    TotalAvgBanRate=mean(`Ban..`)
+  ) %>% ungroup()
+
+topNA<-head(AvgPickRateNA %>%
+  filter(Role=="TOP") %>%
+  arrange(desc(TotalAvgPickRate)),
+  5)$Name
+
+topNA1 <- ggplot(data=(leaguedfNA[leaguedfNA$Name %in% topNA, ] %>% 
+         filter(Role=="TOP") %>% arrange(Name))) +
+  geom_line(mapping=aes(x=factor(Patch, levels = patchFactor), y=`Win..`, color=Name, 
+                        group=Name)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Win Rate") + xlab("Patch")
+
+topNA2 <- ggplot(data=(leaguedfNA[leaguedfNA$Name %in% topNA, ] %>% 
+         filter(Role=="TOP") %>% arrange(Name))) +
+  geom_line(mapping=aes(x=factor(Patch, levels = patchFactor), y=`Ban..`, color=Name, 
+                        group=Name)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  ylab("Ban Rate") + xlab("Patch")
+
+topNA3 <- ggplot(data=(leaguedfNA[leaguedfNA$Name %in% topNA, ] %>% 
+         filter(Role=="TOP") %>% arrange(Name))) +
+  geom_line(mapping=aes(x=factor(Patch, levels = patchFactor), y=`Pick..`, color=Name, 
+                        group=Name)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  ylab("Pick Rate") + xlab("Patch")
+
+grid.arrange(topNA1, topNA2, topNA3, nrow=3)
+
+```
+
+In 13_14 patch in the NA server, Aatrox's winrate skyrocked with respect to the previous patch and his ban rate and pick rate responded the same way. 
+
+In general, other than Aatrox, the ban rate and the pick rate tends to be fairly consistent. For example, Jax's win rate fluctuates quite a bit throughout the season, yet the ban rate stayed fairly constant, same with Darius, Fiora, and Garen. 
+
+NA server has a really casual environment that the players are not quite as sensitive to meta as some other servers. This server also tends to be regarded as one of the worst servers in terms of skill. 
+
+```{r}
+AvgPickRateKR <- leaguedfKR%>%
+  select(-1) %>%
+  group_by(Name, Role) %>%
+  summarize(
+    TotalAvgPickRate=mean(`Pick..`), 
+    TotalAvgWinRate=mean(`Win..`), 
+    TotalAvgBanRate=mean(`Ban..`)
+  ) %>% ungroup()
+
+topKR<-head(AvgPickRateKR %>%
+  filter(Role=="TOP") %>%
+  arrange(desc(TotalAvgPickRate)),
+  5)$Name
+
+topKR1 <- ggplot(data=(leaguedfKR[leaguedfKR$Name %in% topKR, ] %>% 
+         filter(Role=="TOP") %>% arrange(Name))) +
+  geom_line(mapping=aes(x=factor(Patch, levels = patchFactor), y=`Win..`, color=Name, 
+                        group=Name)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Win Rate") + xlab("Patch")
+
+topKR2 <- ggplot(data=(leaguedfKR[leaguedfKR$Name %in% topKR, ] %>% 
+         filter(Role=="TOP") %>% arrange(Name))) +
+  geom_line(mapping=aes(x=factor(Patch, levels = patchFactor), y=`Ban..`, color=Name, 
+                        group=Name)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  ylab("Ban Rate") + xlab("Patch")
+
+topKR3 <- ggplot(data=(leaguedfKR[leaguedfKR$Name %in% topKR, ] %>% 
+         filter(Role=="TOP") %>% arrange(Name))) +
+  geom_line(mapping=aes(x=factor(Patch, levels = patchFactor), y=`Pick..`, color=Name, 
+                        group=Name)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  ylab("Pick Rate") + xlab("Patch")
+
+grid.arrange(topKR1, topKR2, topKR3, nrow=3)
+
+
+```
+
+In 13_14 patch in the KR server, Aatrox's winrate skyrocked with respect to the previous patch and his ban rate and pick rate responded the same way. 
+
+In patch 13_21 in the KR server, K'Sante's win rate went up by a considerable amount. In the subsequent patches, the pick rate and ban rate also skyrocked. As his win rate went down later, the pick rate and ban rate also went down. 
+
+Jax's win rate went up at the end of the season resulting in increase in ban rate and pick rate. 
+
+Jayce's win rate had fluctuations around 50% throughout the season, but the ban rate gradually decreases in throughout the season. 
+
+Renekton's ban rate and pick rate corresponds really well with his win rate that as the win rate goes up, so does his ban rate and pick rate. 
+
+Korea server is the most competitive server. Their players tend to have much better mechanics at champions than other regions so they fight a lot. Because of its competitiveness, the players tend to really pay attention to meta and adjust their bans and picks. 
+
+
+```{r}
+AvgPickRateEUW <- leaguedfEUW%>%
+  select(-1) %>%
+  group_by(Name, Role) %>%
+  summarize(
+    TotalAvgPickRate=mean(`Pick..`), 
+    TotalAvgWinRate=mean(`Win..`), 
+    TotalAvgBanRate=mean(`Ban..`)
+  ) %>% ungroup()
+
+topEUW<-head(AvgPickRateEUW %>%
+  filter(Role=="TOP") %>%
+  arrange(desc(TotalAvgPickRate)),
+  5)$Name
+
+topEUW1 <- ggplot(data=(leaguedfEUW[leaguedfEUW$Name %in% topEUW, ] %>% 
+         filter(Role=="TOP") %>% arrange(Name))) +
+  geom_line(mapping=aes(x=factor(Patch, levels = patchFactor), y=`Win..`, color=Name, 
+                        group=Name)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Win Rate") + xlab("Patch")
+
+topEUW2 <- ggplot(data=(leaguedfEUW[leaguedfEUW$Name %in% topEUW, ] %>% 
+         filter(Role=="TOP") %>% arrange(Name))) +
+  geom_line(mapping=aes(x=factor(Patch, levels = patchFactor), y=`Ban..`, color=Name, 
+                        group=Name)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  ylab("Ban Rate") + xlab("Patch")
+
+topEUW3 <- ggplot(data=(leaguedfEUW[leaguedfEUW$Name %in% topEUW, ] %>% 
+         filter(Role=="TOP") %>% arrange(Name))) +
+  geom_line(mapping=aes(x=factor(Patch, levels = patchFactor), y=`Pick..`, color=Name, 
+                        group=Name)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  ylab("Pick Rate") + xlab("Patch")
+
+grid.arrange(topEUW1, topEUW2, topEUW3, nrow=3)
+```
+
+In 13_14 patch in the EUW server, Aatrox's winrate skyrocked with respect to the previous patch and his ban rate and pick rate responded the same way. 
+
+Darius' win rate fluctuated throughout the season, but the ban rate and pick rate did not necessarily respond to these fluctuations. 
+
+Garen's win rate fluctuated throughout the season, but his ban rate and pick rate went up throughout the season. 
+
+Jax's win rate was high (fluctuating between 50% to 52%) and this ban rate and pick rate was consistently high. 
+
+Renekton's win rate went up throughout the season and so is his pick rate and ban rate. 
+
+
+EUW is a big server with a big population. They tend to have a more proactive playstyle that they would try to make plays instead of waiting for things to happen. This server tends to be better at making macro decisions (taking objectives on the map). 
+
