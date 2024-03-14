@@ -15,10 +15,10 @@ library(gridExtra)
 ```
 
 ```{r}
-leaguedf <- read_csv('leagueS13/S13LeagueOfLegendsData.csv')
-leaguedfKR <- read_csv('leagueS13/S13LeagueOfLegendsDataKR.csv')
-leaguedfNA <- read_csv('leagueS13/S13LeagueOfLegendsDataNA.csv')
-leaguedfEUW <- read_csv('leagueS13/S13LeagueOfLegendsDataEUW.csv')
+leaguedf <- read_csv('../../data_sets/S13LeagueOfLegendsData.csv')
+leaguedfKR <- read_csv('../../data_sets/S13LeagueOfLegendsDataKR.csv')
+leaguedfNA <- read_csv('../../data_sets/S13LeagueOfLegendsDataNA.csv')
+leaguedfEUW <- read_csv('../../data_sets/S13LeagueOfLegendsDataEUW.csv')
 head(leaguedf)
 colnames(leaguedf)
 ```
@@ -130,7 +130,7 @@ Fighters have a volatile nature especially in the top role because they do more 
 ## Q2: What are the most popular champions in top lane between different servers and their performance(win rate, ban rate, pick rate) throughout the patches? 
 
 
-```{r}
+```{r, fig.height = 15, fig.width = 10}
 patch <- unique(leaguedf$Patch)
 
 patchFactor <- factor(patch)
@@ -180,7 +180,7 @@ In general, other than Aatrox, the ban rate and the pick rate tends to be fairly
 
 NA server has a really casual environment that the players are not quite as sensitive to meta as some other servers. This server also tends to be regarded as one of the worst servers in terms of skill. 
 
-```{r}
+```{r, fig.height = 15, fig.width = 10}
 AvgPickRateKR <- leaguedfKR%>%
   select(-1) %>%
   group_by(Name, Role) %>%
@@ -234,7 +234,7 @@ Renekton's ban rate and pick rate corresponds really well with his win rate that
 Korea server is the most competitive server. Their players tend to have much better mechanics at champions than other regions so they fight a lot. Because of its competitiveness, the players tend to really pay attention to meta and adjust their bans and picks. 
 
 
-```{r}
+```{r, fig.height = 15, fig.width = 10}
 AvgPickRateEUW <- leaguedfEUW%>%
   select(-1) %>%
   group_by(Name, Role) %>%
