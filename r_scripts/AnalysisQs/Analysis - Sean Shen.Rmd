@@ -35,7 +35,7 @@ summary(predKDA)
 anova(predKDA)
 ```
 
-With Role, Role%, and class as predictors, we can explain up to 59.5% of the variability in KDA which makes sense as the rest of the variability could be attributed to the difference in skill/performance of players and other factors. All of the predictors are signficant at a 5% level for predicting KDA. 
+With Role, Role%, and class as predictors, we can explain up to 59.5% of the variability in KDA which makes sense as the rest of the variability could be attributed to the difference in skill/performance of players and other factors. All of the predictors are significant at a 5% level for predicting KDA. 
 
 In the summary, each of the categories such as roles and class changes the intercept of the linear regression to predict the KDA. For example, if we are looking at a TOP role and a Fighter class, we would subtract 0.45424 and 0.07878 from the intercept. In the ANOVA test, we see that every additional predictor is significant in explaining more of the variation in the data compared to the previous subset of predictors (since the test is nested). 
 
@@ -126,7 +126,7 @@ We will see much clearer why some of these correlations between KDA and role% is
 
 Assassin, mage, marksman, support, and tank all have positive correlations between KDA and role%. Tank, albeit also found in the top role, tend to be able to survive more pressure than fighters given their survivability. A lot of tanks also were not played in top but rather in other roles. 
 
-Fighters have a volatile nature especially in the top role because they do more damage and have much less survivability. But say one side is behind in gold, the fighter would also lose damage and therefore result in a terrible KDA. 
+Fighters have a volatile nature especially in the top role because they do more damage and have much less survivability. But say one side is behind in gold, the fighter would also lose damage needed for fighting back and therefore result in a terrible KDA. 
 
 
 
@@ -394,3 +394,189 @@ grid.arrange(topNA1, topNA2, topNA3,
 
 
 Other than K'sante (tank), all these picks are fighters. All these picks are good at early to mid game skirmishes and exerting pressure on the map. And K'sante's ultimate ability turns him into a fighter temporarily. Because they are fighters, they have much more carry potential because of the amount of damage they can dish out. 
+
+
+
+
+
+
+
+
+
+
+
+# Follow up Question: 
+
+## How does the relationship of using role %, role and class to predict KDA differ by regions (NA, EUW, KR)? 
+
+
+### North America
+
+```{r}
+predKDA_NA<- lm(KDA~Class + Role + `Role..`, data= leaguedfNA)
+summary(predKDA_NA)
+
+anova(predKDA_NA)
+```
+
+With Role, Role%, and class as predictors, we can explain up to 59.2% of the variability in KDA which makes sense as the rest of the variability could be attributed to the difference in skill/performance of players and other factors. All of the predictors are significant at a 5% level for predicting KDA in the North America server. 
+
+In the summary, each of the categories such as roles and class changes the intercept of the linear regression to predict the KDA. For example, if we are looking at a TOP role and a Fighter class, we would subtract 0.09887 and 0.46347 from the intercept. In the ANOVA test, we see that every additional predictor is significant in explaining more of the variation in the data compared to the previous subset of predictors (since the test is nested). 
+
+In the context of the data, it means that playing champions of a class in their conventional roles or not can to some extent predict the performance of the champion in a game in the North America server. Because the role has a positive slope (0.15154) with respect to KDA, it means that playing conventional picks in terms of class and role tend to yield better results and performance in a game. 
+
+
+```{r, fig.height=15, fig.width=10}
+#average KDA by role and role% in NA
+roleKDA_NA<-  ggplot(data=leaguedfNA) +
+    geom_point(mapping=aes(x=`Role..`, y=KDA, color=Class)) +
+    geom_smooth(method="lm", mapping=aes(x=`Role..`, y=KDA)) +
+    facet_wrap(~Role)  +
+    ggtitle("average KDA by class, role%, facet by role in NA")
+
+#average KDA by class and role in NA%
+classKDA_NA <- ggplot(data=leaguedfNA) +
+    geom_point(mapping=aes(x=`Role..`, y=KDA, color=Role)) +
+    geom_smooth(method="lm", mapping=aes(x=`Role..`, y=KDA)) +
+    facet_wrap(~Class) +
+    ggtitle("average KDA by role, role%, facet by class in NA")
+
+grid.arrange(roleKDA_NA, classKDA_NA, nrow=2, 
+             top=textGrob("KDA by Class, Role and Role% in NA\n", 
+                          gp=gpar(fontsize=20)))
+```
+
+In general, the TOP and the ADC have the lower KDA the higher the role%. Within the ADC specifically, it is because the mages have a low role% which lift the left of the graph up so that the standard marksman ADC actually seemed to have lower KDAs. But in the facet by class graph, the marksman KDA actually increases as the as the role% increases with the ADC role as the mainstream marksmen players. 
+
+While for the fighters, in the first graph (facet by role), they make up the data with the lowest KDAs in the TOP role. In the second graph (facet by class), the fighters that played in the TOP role have the lowest KDAs. While other roles such as MID (short lane, less kill potential), ADC(2 players), and JUNGLE (PVE gameplay, fighting jungle) are less of that nature. 
+
+The mages in the ADC role had some relative success compared to ADC according to the first graph, but there are not a lot mages in the ADC role which means that it is good conditionally as a pick for ADC. Amongst the mages, the ones who played ADC had relative success according to the second graph compared to the standard MID mages, but only picked conditionally. 
+
+The marksman picked in the TOP role tend to have lower KDAs as they are susceptible to JUNGLE interference. And also in teamfights, it is likely that the team with a marksman TOP does not have a frontline. 
+
+The assassins in the JUNGLE role saw relatively more success than assassins in the MID role as given their nature of burst damage and mobility, they would have more success catching people in lanes off guard. 
+
+Tanks have lower KDAs in TOP even with more role%. Tanks are useless in MID lane shown by their low KDAs because they don't have enough kill pressure in a short lane (MID) nor do they have good roam potential, while the tanks in the JUNGLE role performs quite well for their crown control capabilities. 
+
+Supports have the highest KDAs and the conventional picks are successful. Supports also found some success in MID and JUNGLE but very conditionally because there is not a lot of data points for support in MID and JUNGLE. Supports suffered in TOP. 
+
+### Korea
+
+```{r}
+predKDA_KR<- lm(KDA~Class + Role + `Role..`, data= leaguedfKR)
+summary(predKDA_KR)
+
+anova(predKDA_KR)
+```
+
+With Role, Role%, and class as predictors, we can explain up to 61.2% of the variability in KDA which makes sense as the rest of the variability could be attributed to the difference in skill/performance of players and other factors. All of the predictors are significant at a 5% level for predicting KDA in the Korea server. 
+
+In the summary, each of the categories such as roles and class changes the intercept of the linear regression to predict the KDA. For example, if we are looking at a TOP role and a Fighter class, we would subtract 0.11399 and 0.60231 from the intercept. In the ANOVA test, we see that every additional predictor is significant in explaining more of the variation in the data compared to the previous subset of predictors (since the test is nested). 
+
+In the context of the data, it means that playing champions of a class in their conventional roles or not can to some extent predict the performance of the champion in a game in the Korea server. Because the role has a positive slope (0.13410) with respect to KDA, it means that playing conventional picks in terms of class and role tend to yield better results and performance in a game. 
+
+```{r, fig.height=15, fig.width=10}
+#average KDA by role and role% in KR
+roleKDA_KR<-  ggplot(data=leaguedfKR) +
+    geom_point(mapping=aes(x=`Role..`, y=KDA, color=Class)) +
+    geom_smooth(method="lm", mapping=aes(x=`Role..`, y=KDA)) +
+    facet_wrap(~Role)  +
+    ggtitle("average KDA by class, role%, facet by role in KR")
+
+#average KDA by class and role in KR%
+classKDA_KR <- ggplot(data=leaguedfKR) +
+    geom_point(mapping=aes(x=`Role..`, y=KDA, color=Role)) +
+    geom_smooth(method="lm", mapping=aes(x=`Role..`, y=KDA)) +
+    facet_wrap(~Class) +
+    ggtitle("average KDA by role, role%, facet by class in KR")
+
+grid.arrange(roleKDA_KR, classKDA_KR, nrow=2, 
+             top=textGrob("KDA by Class, Role and Role% in KR\n", 
+                          gp=gpar(fontsize=20)))
+```
+
+Similar trends in the North America server is found in the Korea server that fighters in TOP tend to have the lowest KDAs while the fighters in JUNGLE do much better. Mage ADC are quite viable at times. Mages are successful in JUNGLE and MID. Tanks being useless in the MID role and good in JUNGLE. Marksman in top also have relatively lower KDAs but are consistently good in the ADC role. Assassins are good in JUNGLE and MID. Supports are good in SUPPORT consistently, good in MID and JUNGLE conditionally, and unoptimal in TOP. 
+
+
+
+### Europe West
+
+```{r}
+predKDA_EUW<- lm(KDA~Class + Role + `Role..`, data= leaguedfEUW)
+summary(predKDA_EUW)
+
+anova(predKDA_EUW)
+```
+
+With Role, Role%, and class as predictors, we can explain up to 61.2% of the variability in KDA which makes sense as the rest of the variability could be attributed to the difference in skill/performance of players and other factors. All of the predictors are significant at a 5% level for predicting KDA in the Europe West server. 
+
+In the summary, each of the categories such as roles and class changes the intercept of the linear regression to predict the KDA. For example, if we are looking at a TOP role and a Fighter class, we would subtract 0.11399 and 0.60231 from the intercept. In the ANOVA test, we see that every additional predictor is significant in explaining more of the variation in the data compared to the previous subset of predictors (since the test is nested). 
+
+In the context of the data, it means that playing champions of a class in their conventional roles or not can to some extent predict the performance of the champion in a game in the Korea server. Because the role has a positive slope (0.13979) with respect to KDA, it means that playing conventional picks in terms of class and role tend to yield better results and performance in a game. 
+
+```{r, fig.height=15, fig.width=10}
+#average KDA by role and role% in EUW
+roleKDA_EUW<-  ggplot(data=leaguedfEUW) +
+    geom_point(mapping=aes(x=`Role..`, y=KDA, color=Class)) +
+    geom_smooth(method="lm", mapping=aes(x=`Role..`, y=KDA)) +
+    facet_wrap(~Role)  +
+    ggtitle("average KDA by class, role%, facet by role in EUW")
+
+#average KDA by class and role in EUW%
+classKDA_EUW <- ggplot(data=leaguedfEUW) +
+    geom_point(mapping=aes(x=`Role..`, y=KDA, color=Role)) +
+    geom_smooth(method="lm", mapping=aes(x=`Role..`, y=KDA)) +
+    facet_wrap(~Class) +
+    ggtitle("average KDA by role, role%, facet by class in EUW")
+
+grid.arrange(roleKDA_EUW, classKDA_EUW, nrow=2, 
+             top=textGrob("KDA by Class, Role and Role% in EUW\n", 
+                          gp=gpar(fontsize=20)))
+```
+Similar trends in the North America server and the Korea server is found in the Europe West server that fighters in TOP tend to have the lowest KDAs while the fighters in JUNGLE do much better. Mage ADC are quite viable at times. Mages are successful in JUNGLE and MID. Tanks being useless in the MID role and good in JUNGLE. Marksman in top also have relatively lower KDAs but are consistently good in the ADC role. Assassins are good in JUNGLE and MID. Supports are good in SUPPORT consistently, good in MID and JUNGLE conditionally, and unoptimal in TOP. 
+
+### Summary
+
+#### Results from the ANOVA and summary of linear models
+
+North American server rewarded conventional picks in terms of role and class a slightly more because of a bigger slope than both EUW and KR server. In all 3 servers, picking fighters and marksmen tend yield lower KDAs while the other class are likely to have higher KDAs because of the negative intercept added when fighters and marksmen are selected for the model. 
+
+EUW is a proactive region on macro-plays (taking objectives on the map). Their jungle has the biggest positive intercept change (0.26814) of the 3 regions which means that if the champion is played in the jungle, it is statistically more likely to have higher KDAs than other regions. 
+
+#### Results from the ggplots
+
+```{r, fig.height=45, fig.width=10}
+grid.arrange(roleKDA_NA, roleKDA_KR, roleKDA_EUW,
+             classKDA_NA, classKDA_KR, classKDA_EUW,
+             nrow=6, 
+             top=textGrob("KDA by Class, Role and Role% in the 3 Servers\n", 
+                          gp=gpar(fontsize=20)))
+```
+
+Of the 5 roles (TOP, MID, ADC, SUPPORT, JUNGLE), TOP, JUNGLE, SUPPORT, and ADC have similar trends in all 3 regions that TOP have a negative correlation between KDA and role% while the other ones have a positive correlation between KDA and role%. The only trend that has differences is in the MID role among the 3 regions.  
+
+In the MID role in EUW, there is no correlation between role% and KDA. Among MID in EUW, assassins have a positive correlation. Mages have an neutral association. Supports are really high up in the left tail (high leverage) which decreases the overall correlation between KDA and role% by quite a bit. Marksman have a little correlation between KDA and role% and so do tanks. In the MID role, NA has a positive trend that as role% increases, the KDA also increases. Among MID in NA, tanks do really bad (low KDA) with a low role% (high leverage), which contributes greatly to overall positive in NA. Mages, fighters, supports, marksman, and assassins all had similar individual correlations between KDA and role%. In KR, the correlation between KDA and role% are also about neutral. Mages, fighters, supports, marksman, and assassins all had similar individual correlations between KDA and role% in Korea. Therefore, we can conclude that the main issue with the positive correlation in NA is the nontraditional tank picks in the MID role performing badly. 
+
+
+Of the 6 classes in the 3 regions, other than the fighter class that has a negative correlation between KDA and role%, the mage, tank, assassin, support, and marksman all have positive correlations between KDA and role%. So, the correlation of KDA and role% between the 3 regions are consistent throughout. However, there are some differences with the distribution within the classes themselves among 3 regions. 
+
+One general trend is that any class that went to the TOP lane tend to have lower KDAs than when they were played in other roles which confirms that TOP lane is an unforgiving role. 
+
+Within the tank class, in NA and EUW servers, the a cluster of tanks that went to the TOP role have a KDA around 1.5 when the role% is high. But in KR, the majority of the tanks that went the TOP lane had a KDA around 2. This concurs with the general consensus that KR has the best mechanical players. Despite fighters in general being able to pick off tanks in TOP (1v1, skill intensive role), the Korean tank players perform much better mechanically than the tank players in other regions. 
+
+Within the assassin class, a higher percentage of assassins were played TOP in KR than the other 2 regions shown by the higher role% of TOP assassins. 
+
+Within the fighter class, all three regions share similar distributions of data points in the graphs faceted by class with an overall negative trend between KDA and role%. 
+
+Within the mage class, all three regions share similar distributions of data points in the graphs faceted by class. 
+
+Within the support class, all three regions share similar distributions of data points in the graphs faceted by class. 
+
+Within the marksman class, NA, EUW, and KR have similar distributions for marksman champions going into TOP, JUNGLE, SUPPORT, and MID. However, for the ADC role, NA and EUW both had high role% for most of the marksman while KR had a lot of lower role% for quite a few marksman champions while their KDAs are consistent with the high role% markman's KDAs. This means that KR marksman players can exploit off-meta/nontraditional picks and use them to their advantage. 
+
+
+
+
+
+
+
