@@ -73,6 +73,26 @@ pw2 <- (plot2a | plot2b) &
 ```{r, fig.height = 15, fig.width = 10, message = F}
 #Question 9: Tier Prediction
 Tier_Color <- c(God = "#abd63d", S ="lightblue",A =   "#bc0a7d",B =  "purple", C = "red", D = "yellow")
+
+plotprea <- leaguedf %>%
+  ggplot() + 
+  geom_bar(mapping = aes(x = Tier, fill = Tier), color = "black") + 
+  facet_wrap( ~ Role) + 
+  scale_x_discrete(limits = rev(levels(leaguedf$Tier))) + 
+  labs(title = "Tier Distribution by Role", x = "Tier", y = "Count") + 
+  scale_fill_manual(values = Tier_Color) +
+  theme(legend.position = "none")
+
+
+plotpreb <- leaguedf %>%
+  ggplot() + 
+  geom_bar(mapping = aes(x = Tier, fill = Tier), color = "black") + 
+  facet_wrap( ~ Class) + 
+  scale_x_discrete(limits = rev(levels(leaguedf$Tier))) + 
+  labs(title = "Tier Distribution by Class", x = "Tier", y= '')+ 
+  scale_fill_manual(values = Tier_Color) + 
+  theme(legend.position = "none")
+
 plot1a <- leaguedf %>% ggplot(mapping = aes(x = PickBanRate)) + 
   geom_histogram(aes(fill = Tier, y = after_stat(density)), 
                  alpha = 0.3,
@@ -81,7 +101,7 @@ plot1a <- leaguedf %>% ggplot(mapping = aes(x = PickBanRate)) +
   scale_y_continuous(name = "Density", sec.axis = sec_axis(~.*length(leaguedf), name = "Count")) + 
   facet_wrap(~ Tier) +
   theme(legend.position = "none") + 
-  labs(title = "Faceted by Tier", x = "Pick Ban Rate", y = "Density") + 
+  labs(title = "Pick/Ban Rate Faceted by Tier", x = "Pick Ban Rate", y = "Density") + 
   scale_fill_manual(values = Tier_Color)
 
 plot2a <- leaguedf %>%
@@ -92,21 +112,20 @@ plot2a <- leaguedf %>%
                  position = "identity",
                  bins = 50) + 
   geom_density(mapping = aes(fill = Tier), alpha = 0.25) + 
-  labs(title = "Complete Plot", x = "Pick Ban Rate", y = "Density") + 
+  labs(title = "Pick/Ban Rate Complete Plot", x = "Pick Ban Rate", y = "Density") + 
   scale_y_continuous(name = "Density", sec.axis = sec_axis(~.*length(leaguedf), name = "Count")) +
   scale_fill_manual(values = Tier_Color)
 
 plot3a <- leaguedf%>% 
   ggplot(mapping = aes(x = PickBanRate)) + 
   geom_histogram(aes(fill = Tier), alpha = 0.3, color = "black") + 
-  labs(title = "Stacked Histogram", x = "Pick Ban Rate", y = "Count") + 
+  labs(title = "Pick/Ban Rate Stacked Histogram", x = "Pick Ban Rate", y = "Count") + 
   scale_fill_manual(values = Tier_Color) + 
   theme(legend.position = "none")
 
 
-plot1a / plot2a / plot3a + plot_annotation(
-  title = "Tier Distribution with Pick Ban Rate",
-  subtitle = "Histogram overlayed with density plot",
+(plotprea + plotpreb) / plot1a / plot2a / plot3a + plot_annotation(
+  title = "Tier Distribution Visualizations",
   caption = "You can see that D and C tiers are very close to each other, with C only being slightly ahead. \nThe others are more spread out, and God has a section that is almost entirely it's own."
 )
 ```
@@ -464,12 +483,12 @@ pw + plot_annotation(
 
 ```{r, message = F}
 RoleByClass <- leaguedf %>%
-  mutate(PlayRate = RoleRate * PickRate / 2) %>% #We divide by 2 because there are two of each role in every game.
+  mutate(PlayRate = PickRate) %>% 
   group_by(Patch, Role, Class) %>%
-  summarize(Visibility = sum(PlayRate), WinRate = mean(WinRate)) %>%
+  summarize(Visibility = sum(PickRate), WinRate = mean(WinRate)) %>%
   ungroup()
 
-head(RoleByClass, 5) #Note that the sum of playrate will not = 1, as there are champions that are played in each role that aren't represented in the dataset, because of low play rates.
+head(RoleByClass, 5) #Note that the sum of visibility will not = 1, as there are champions that are played in each role that aren't represented in the dataset, because of low pick rates.
 ```
 
 ```{r, fig.width= 10, fig.height = 10, message = F, warning = F}
@@ -517,4 +536,8 @@ plot2b <- RoleByClass %>%
 (plot1a + plot1b) / (plot2a & plot2b) + plot_annotation(title = "Boxplots analyzing Role and Class relationships with pickrate",
                                   caption = "You can see that Marksman is consisently heavily played in ADC (> 80%) yet the mean win rate falls lower than Mage at every patch. \n However, Marksman has an incredibly small standard deviation for the winrate, meaning it's very consistent over the long term, while Mage is has the largest in the group.")  + 
   plot_layout(guides = "collect") 
+```
+
+```{r}
+
 ```
