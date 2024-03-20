@@ -13,6 +13,7 @@ library(plotly)
 library(reshape2)
 library(cowplot)
 library(ggpubr)
+library(kableExtra)
 ```
 
 ```{r}
@@ -68,6 +69,12 @@ pw2 <- (plot2a | plot2b) &
 
 (wrap_elements(panel = pw1) / wrap_elements(panel = pw2)) & 
   plot_layout(guides = "collect")
+
+leaguedf %>% filter(Class == "Assassin", Role %in% c("Mid", "Jungle")) %>%
+  group_by(Role) %>%
+  summarize(RSquared = cor(x = sdWinRate, y = sdPickBanRate)^2) %>%
+  kbl() %>%
+  kable_classic(full_width = F, html_font = "cambria")
 ```
 
 ```{r, fig.height = 15, fig.width = 10, message = F}
