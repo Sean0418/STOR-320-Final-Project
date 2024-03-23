@@ -1,0 +1,277 @@
+---
+title: "Win Rate Predictions"
+output: html_document
+date: "2024-03-20"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(caret)
+library(lme4)
+library(kableExtra)
+library(patchwork)
+library(keras)
+```
+
+
+```{r}
+file_paths <- c(
+  "../../data_sets/S13LeagueOfLegendsData.csv",
+  "../../data_sets/S13LeagueOfLegendsDataKR.csv",
+  "../../data_sets/S13LeagueOfLegendsDataEUW.csv",
+  "../../data_sets/S13LeagueOfLegendsDataNA.csv"
+)
+
+regions <- c("WORLD", "KOR", "EUW", "NA")
+
+leaguedf <- bind_rows(lapply(seq_along(file_paths), function(i) {
+  read.csv(file_paths[i]) %>%
+    mutate(region = regions[i])
+})) %>%
+  mutate(Patch = as.numeric(str_replace(Patch, '(.*?)_(.*?)', '')),
+         Role = str_to_title(Role)) %>%
+  rename('PickRate' = "Pick..", "RoleRate" = "Role..", "WinRate" = "Win..", "BanRate" = "Ban..") %>%
+  select(-1)
+
+head(leaguedf, 5) %>%
+  kbl() %>%
+  kable_classic(full_width = F, html_font = "cambria")
+```
+
+```{r}
+leaguedf %>%
+  filter(Name == "Yasuo" | Name == "Yone") %>%
+  ggplot() + 
+  geom_point(mapping = aes(x = KDA, y = `WinRate`, color = Name), alpha = 0.1) + 
+  geom_smooth(mapping = aes(x = KDA, y = `WinRate`, color = Name), se = F, method = 'lm') + 
+  facet_wrap(~ Role)
+```
+
+
+```{r}
+#Dummy encoding for Name
+leaguedf <- leaguedf %>%
+  select(1,3, 7, 11)
+head(leaguedf, 5) %>%
+  kbl() %>%
+  kable_classic(full_width = F, html_font = "cambria")
+```
+
+```{r, warning = F}
+regression_df <- leaguedf %>%
+  mutate(ID = paste(Name, Role, sep = '_')) %>%
+  group_by(Name, Role) %>%
+  filter(n() == 92) %>% #Every data point nessecary
+  ungroup()
+```
+
+```{r, echo = F, eval = F}
+write.csv(regression_df, "./Training_data.csv")
+```
+
+```{r}
+quadmodel <- lmList(formula = WinRate ~ KDA + I(KDA^2) | ID, data = regression_df) %>% #Groups regressions by ID, which is unique to Name and Role
+  coef() %>%
+  rownames_to_column(var = "ID") %>%
+  rename(x = `KDA`, x2 = `I(KDA^2)`, Intercept = `(Intercept)`)
+linmodel <- lmList(formula = WinRate ~ KDA | ID, data = regression_df) %>%
+  coef() %>%
+  rownames_to_column(var = "ID") %>%
+  rename(xL = `KDA`, InterceptL = `(Intercept)`)
+```
+
+```{r}
+ranges <- regression_df %>%
+  group_by(ID) %>%
+  summarize(max = max(KDA), min = min(KDA))
+prediction_grid <- expand_grid(ID = unique(regression_df$ID), KDA = seq(0,5, length.out = 401)) %>%
+  right_join(ranges, by = join_by(ID)) %>%
+  filter(KDA >= min & KDA <= max) %>%
+  right_join(quadmodel, by = join_by(ID)) %>%
+  right_join(linmodel, by = join_by(ID)) %>%
+  transmute(Name = str_replace(ID, '_(.*)', ''), 
+            Role = str_replace(ID, '(.*?)_', ''),
+            q_pred = Intercept + KDA * x + KDA^2 * x2,
+            l_pred = InterceptL + KDA * xL, 
+            KDA = KDA)
+```
+
+```{r, fig.height = 10, fig.width = 20}
+plot_q <- regression_df %>%
+  ggplot(mapping = aes(x = KDA, y = WinRate, color = Name)) + 
+  geom_point(alpha = 0.2) + 
+  geom_line(data = prediction_grid, mapping = aes(x = KDA, y = q_pred, color = Name), linewidth = 1.1) + 
+  facet_wrap(~ Role) + 
+  theme(legend.position = "none") + 
+  labs(x = "KDA", y = "Win Rate", title = "Quadratic Models")
+plot_l <- regression_df %>%
+  ggplot(mapping = aes(x = KDA, y = WinRate, color = Name)) + 
+  geom_point(alpha = 0.2) +
+  geom_line(data = prediction_grid, mapping = aes(x = KDA, y = l_pred, color = Name), linewidth = 1.1) + 
+  facet_wrap( ~ Role) + 
+  theme(legend.position = "none") + 
+  labs(x = "KDA", y = "Win Rate", title = "Linear Models")
+
+plot_q + plot_l + plot_annotation(title = "Model Predictions Overlayed on scatterplot Data", caption = "While overall, most quadratic models look linear, you can see that some are very curved.")
+```
+
+
+```{r, message = F}
+msel_grid <- linmodel %>%
+  select(c(ID, InterceptL, xL)) %>%
+  right_join(regression_df, by= join_by(ID)) %>%
+  arrange(ID) %>%
+  mutate(pred = InterceptL + KDA*xL, 
+         diff = WinRate - pred, 
+         mse_linear = diff^2,
+         key = row_number()) %>%
+  select(ID, Name, Role, mse_linear, key)
+
+
+mseq_grid <- quadmodel %>%
+  select(c(ID, Intercept, x, x2)) %>%
+  right_join(regression_df, by = join_by(ID)) %>%
+  arrange(ID) %>%
+  mutate(pred = Intercept + KDA*x + KDA^2 * x2, 
+         diff = WinRate - pred,
+         mse_quadratic = diff^2,
+         key = row_number()) %>%
+  select(ID, Name, Role, mse_quadratic, key)
+
+
+```
+
+```{r, warning = F}
+mse_grid_role <- inner_join(mseq_grid, msel_grid, by = join_by(ID, key, Role)) %>%
+ mutate(mse_diff = mean(mse_linear - mse_quadratic)) %>%
+  group_by(Role) %>%
+  summarize(MSE = mean(mse_diff),
+            sd = sqrt(sd(mse_linear)^2/n() + sd(mse_quadratic)^2/n()),
+            mse_linear = mean(mse_linear),
+            mse_quadratic = mean(mse_quadratic),
+            t = MSE / sd,
+            df = n() - 1) %>%
+  transmute(
+    Role = Role,
+    `Degrees of Freedom` = df,
+    `Linear MSE Mean` = mse_linear,
+    `Quadratic MSE Mean` = mse_quadratic,
+    `Welsh T Statistic` = t,
+    `P-Value` = pt(q = t, df = df, lower.tail = F)
+  ) %>%
+  kbl() %>%
+  kable_classic(html_font = "cambria", full_width = F)
+mse_grid_role
+```
+
+Overall, the difference between MSE for a quadratic and linear regression is minimal, meaning most champions likely follow a linear regression. However, with further analysis we can find more relationships.
+
+```{r, message = F}
+mse_grid_champ = inner_join(mseq_grid, msel_grid, by = join_by(key, Name, Role)) %>%
+  mutate(mse_diff = mse_linear - mse_quadratic) %>%
+  group_by(Name, Role) %>%
+  summarize(
+    MSE = mean(mse_diff),
+    sd = sqrt(sd(mse_linear)^2 / n() + sd(mse_quadratic)^2 / n()),
+    df = n() - 1,
+    t = MSE / sd,
+    mse_linear = mean(mse_linear),
+    mse_quadratic = mean(mse_quadratic)
+  ) %>%
+  transmute(
+    Name= Name,
+    Role = Role,
+    `Degrees of Freedom` = df,
+    `Linear MSE Mean` = mse_linear,
+    `Quadratic MSE Mean` = mse_quadratic,
+    `Welsh T Statistic` = t,
+    `P Value` = pt(q = t, df = df, lower.tail = F)
+  ) %>%
+  arrange(`P Value`) %>%
+  head(5) %>%
+  kbl() %>%
+  kable_classic(html_font = "cambria", full_width = F)
+
+
+mse_grid_champ
+```
+
+```{r, eval = F}
+ranges <- regression_df %>%
+  mutate(ID = paste(Name, Role, sep = '_')) %>%
+  group_by(ID) %>%
+  summarize(max = max(KDA), min = min(KDA))
+
+predict_grid <- expand.grid(KDA = seq(0,5, length.out = 501), ID = unique(regression_df$ID)) %>%
+  mutate(unique = row_number()) %>%
+  right_join(ranges, by = join_by(ID)) %>%
+  filter(KDA >= min-0.005 & KDA <= max+0.005) %>%
+  select(-c("min", "max", "unique"))
+
+write.csv(predict_grid, "./Prediction_Grid.csv")
+```
+
+```{r, echo = F, message = F}
+prediction_grid <- read_csv("./Prediction_Grid.csv")
+
+```
+At this point, I use Keras and Tensorflow in Python to train a basic Artificial Neural Network. The code is available in ./model_train.py.
+
+```{r}
+prediction_grid %>%
+  mutate(Name = str_replace(ID, '_(.*)', ''), 
+         Role = str_replace(ID, '(.*?)_', '')) %>%
+  ggplot() + 
+  geom_line(mapping = aes(x = KDA, y = Predictions, color = Name), size = 0.6) + 
+  geom_point(data = regression_df, mapping = aes(x = KDA, y = WinRate, color = Name), alpha = 0.1) + 
+  facet_wrap(~ Role) + 
+  theme(legend.position = "none")
+  
+```
+
+
+```{r}
+msen_grid <- read_csv("./Training_data.csv", show_col_types = F) %>%
+  mutate(Name = str_replace(ID, "_(.*)", ""),
+         Role = str_replace(ID, "(.*)_", ""),
+         MSE = (Predictions - WinRate)^2) %>%
+  arrange(ID) %>%
+  mutate(key = row_number())
+
+mse_grid_role_final <- inner_join(msen_grid, msel_grid, by = join_by(key, Role)) %>%
+  inner_join(mseq_grid, by = join_by(key, Role)) %>%
+  mutate(
+    mse_diff_quadratic = mse_linear - mse_quadratic,
+    mse_diff_neural = mse_linear - MSE
+  ) %>%
+  group_by(Role) %>%
+  summarize(
+    mse_diff_quadratic = mean(mse_diff_quadratic),
+    mse_diff_neural = mean(mse_diff_neural),
+    sd_quad = sqrt(sd(mse_quadratic)^2/n() + sd(mse_linear)^2/n()),
+    sd_neural = sqrt(sd(MSE)^2/n() + sd(mse_linear)^2/n()),
+    t_quad = mse_diff_quadratic / sd_quad,
+    t_neural = mse_diff_neural / sd_neural,
+    df = n() - 1,
+    mse_quadratic = mean(mse_quadratic),
+    mse_linear = mean(mse_linear),
+    mse_neural = mean(MSE)
+  ) %>%
+  transmute(
+    Role = Role,
+    `Degrees of Freedom` = df,
+    `Mean MSE Linear` = mse_linear,
+    `MSE Quadratic` = mse_quadratic,
+    `MSE Neural Network` = mse_neural,
+    `Welsh's T Statistic for Quadratic` = t_quad,
+    `Welsh's T Statistic for Neural Network` = t_neural,
+    `P Value for Quadratic` = pt(q = t_quad, df = df, lower.tail = F),
+    `P Value for Neural Network` = pt(q = t_neural, df = df, lower.tail = F)
+  ) %>%
+  kbl() %>%
+  kable_classic(html_font = "cambria", full_width = F)
+
+mse_grid_role_final
+```
+```
