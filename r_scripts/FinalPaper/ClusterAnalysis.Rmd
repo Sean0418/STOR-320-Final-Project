@@ -1,0 +1,281 @@
+---
+title: "tier Classification with Ranger model Machine Learning"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(dplyr.summarise.inform = FALSE)
+set.seed(27)
+```
+
+```{r, echo = F, message = F}
+library(tidyverse)
+library(caret)
+library(patchwork)
+library(Rtsne)
+```
+
+```{r}
+leaguedf <- read_csv('../../data_sets/S13LeagueOfLegendsData.csv', 
+                      col_types=c('c', 'c', 'c', 'c', 'c', 'd', 'd', 'd', 'd', 'd', 'd', 'd', 'c'), 
+                      col_names=c('rowno', 'Name', 'Class', 'Role', 'Tier', 'Score', 'Trend', "WinRate", "RoleRate", "PickRate", "BanRate", 'KDA', 'Patch'), skip=1) %>%
+  column_to_rownames("rowno") %>% 
+  mutate(PickBanRate = PickRate + BanRate, 
+         Patch = as.numeric(str_replace(Patch, '(.*?)_(.*?)', '')), 
+         Role = str_to_title(Role))
+leaguedf$Tier = as.factor(leaguedf$Tier) %>%
+  fct_relevel(c("God", "S", "A", "B", "C", "D"))
+
+head(leaguedf, 5)
+```
+
+```{r, fig.width = 10, fig.height = 10}
+
+plot1a <- leaguedf %>%
+  ggplot() + 
+  geom_point(mapping = aes(x = KDA, y = WinRate, color = Tier), size = 0.75, alpha = 0.4) + 
+  labs(x = "KDA", y = "Win Rate") + 
+  theme_minimal()+ 
+  theme(legend.position = "none")
+
+plot1b <- leaguedf %>%
+  ggplot() +
+  geom_point(mapping = aes(x = PickBanRate, y = WinRate, color = Tier), size = 0.75, alpha = 0.4) + 
+  labs(x= "Pick/Ban Rate", y= "Win Rate") + 
+  theme_minimal()+ 
+  theme(legend.position = "right")+
+     guides(color = guide_legend(override.aes = list(size = 3) ) )
+
+plot1c <- leaguedf %>%
+  ggplot() + 
+  geom_boxplot(mapping = aes(x = Role, y = RoleRate, color = Tier)) + 
+  labs(x = "Role", y = "Role %") + 
+  theme_minimal() + 
+  theme(legend.position = "none")
+
+
+((plot1a | plot1b) / plot1c )& 
+  plot_layout(guides = "collect") &
+  theme(legend.position = "right") &
+  plot_annotation(title = "Meta SRC Tier Cluster Analysis",
+                  caption = "Pick Ban Rate and KDA have fairly good descriptions of Tier, with an interesting Spread, while KDA is more spread out, and of course Role ^ has an interesting discribtuion, fairly common across most rolls except for a few outliers.") 
+
+```
+
+
+```{r, fig.width  =10, fig.height = 10} 
+#How to do Unsupervised learning
+
+#Step 1: Normalize Data:
+#First drop icky Vars and then Dummy encode Name, Class, and Role
+#This is a high dimensional Data set
+
+Normaldf <- leaguedf %>%
+  select(-c(Tier, Score, Trend, PickBanRate)) %>%
+    pivot_wider(names_from = Role,
+              values_from = Role,
+              values_fn = function(x) 1,
+              values_fill = 0) %>%
+    mutate(Class = paste("Class: ", Class, sep = '')) %>%
+    pivot_wider(names_from = Class,
+                values_from = Class,
+                values_fn = function(x) 1,
+                values_fill = 0) %>%
+    pivot_wider(names_from = Name,
+                values_from = Name,
+                values_fn = function(x) 1,
+                values_fill =0) %>%
+  mutate(
+    WinRate = (WinRate - mean(WinRate))/sd(WinRate),
+    RoleRate = (RoleRate - mean(RoleRate))/ sd(RoleRate),
+    PickRate = (PickRate - mean(PickRate)) / sd(PickRate),
+    BanRate = (BanRate - mean(BanRate)) / sd(BanRate),
+    KDA = (KDA - mean(KDA)) / sd(KDA),
+    Patch = (Patch -mean(Patch)) / sd(Patch)
+  )
+  
+#Step 2: Clusterize the Data
+
+data <- kmeans(Normaldf, centers = 6, nstart = 25)
+
+leaguedf$Cluster = as.character(data$cluster)
+
+plot1a <- leaguedf %>%
+  ggplot() + 
+  geom_point(mapping = aes(x = KDA, y = WinRate, color = Cluster), size = 0.75, alpha = 0.4) + 
+  labs(x = "KDA", y = "Win Rate") + 
+  theme_minimal()+ 
+  theme(legend.position = "none")
+
+plot1b <- leaguedf %>%
+  ggplot() +
+  geom_point(mapping = aes(x = PickBanRate, y = WinRate, color = Cluster), size = 0.75, alpha = 0.4) + 
+  labs(x= "Pick/Ban Rate", y= "") + 
+  theme_minimal()+ 
+  theme(legend.position = "right")+
+     guides(color = guide_legend(override.aes = list(size = 3) ) )
+
+plot1c <- leaguedf %>%
+  ggplot() + 
+  geom_boxplot(mapping = aes(x = Role, y = RoleRate, color = Cluster)) +
+    labs(x = "Role", y = "Role %") + 
+  theme_minimal() + 
+  theme(legend.position = "none")
+
+
+
+((plot1a | plot1b) / plot1c )& 
+  plot_layout(guides = "collect") &
+  plot_annotation(title = "K Means Cluster Analysis") 
+
+```
+
+
+```{r}
+
+
+Propdf <- leaguedf %>%
+  group_by(Tier, Cluster) %>%
+  summarize(count = n()) %>%
+  ungroup() %>%
+  group_by(Tier) %>%
+  mutate(Proportion = count / sum(count)) %>%
+  arrange(desc(Proportion))
+
+heatplot <- Propdf %>%
+  ggplot() +
+  geom_tile(mapping = aes(x = Tier, y = Cluster, fill = Proportion))
+
+heatplot
+```
+
+
+```{r}
+RTsneNoExtra <- Rtsne(select(leaguedf, -c(Tier, Score, Trend, Cluster)),
+                      max_iter = 5000)
+RTsne <- Rtsne(select(leaguedf, -c(Cluster)),
+               max_iter = 5000)
+```
+
+```{r, fig,height = 10}
+WithTierY <- RTsne$Y %>%
+  as_tibble()
+NoTierY <- RTsneNoExtra$Y %>%
+  as_tibble()
+
+NoTierY$Tier <- leaguedf$Tier
+WithTierY$Tier <- leaguedf$Tier
+NoTierY$Cluster <- leaguedf$Cluster
+WithTierY$Cluster <- leaguedf$Cluster
+
+plot1a <- NoTierY %>%
+  ggplot() +
+  geom_point(mapping = aes(x = V2, y = V1, color = Tier)) + theme_minimal() + 
+  theme(legend.position = "none") + 
+  labs(title = "Without Tier, Score, and Trend", x = '', y = 'Meta SRC Tier')
+
+plot1b <- WithTierY %>%
+  ggplot() + 
+  geom_point(mapping = aes(x = V2, y = V1, color = Tier)) + 
+  theme_minimal() + 
+  theme(legend.position = "right") + 
+  labs(title = "With Tier, Score, and Trend", x = '', y = '')
+
+plot2a <- NoTierY %>%
+  ggplot() +
+  geom_point(mapping = aes(x = V2, y = V1, color = Cluster)) + theme_minimal() + 
+  theme(legend.position = "none") + 
+  labs(title = '', x = '', y = 'K Means Clusters')
+
+plot2b <- WithTierY %>%
+  ggplot() + 
+  geom_point(mapping = aes(x = V2, y = V1, color = Cluster)) + 
+  theme_minimal() + 
+  theme(legend.position = "right") + 
+  labs(title = "", x = '', y = '')
+
+((plot1a | plot1b) / (plot2a | plot2b)) &
+  plot_annotation(title = "T-Stochastic Neighbor Embedding",
+                  caption = "Even including non-observable data (Tier, Score, and Trend), we can still \nsee that there are sections that don't belong to clear clusters") & 
+  plot_layout(guides = "collect") 
+```
+
+```{r, eval = F}
+RTsneNoExtra <- Rtsne(select(leaguedf, -c(Tier, Score, Trend, Cluster)),
+                      perplexity = 500,
+                      max_iter = 5000)
+NoTierY <- RTsneNoExtra$Y %>%
+  as_tibble()
+
+NoTierY$Tier <- leaguedf$Tier
+NoTierY$Cluster <- leaguedf$Cluster
+
+plot1a <- NoTierY %>%
+  ggplot() +
+  geom_point(mapping = aes(x = V2, y = V1, color = Tier)) + theme_minimal() + 
+  theme(legend.position = "none") + 
+  labs(title = "Without Tier, Score, and Trend", x = '', y = 'Meta SRC Tier')
+
+plot2a <- NoTierY %>%
+  ggplot() +
+  geom_point(mapping = aes(x = V2, y = V1, color = Cluster)) + theme_minimal() + 
+  theme(legend.position = "none") + 
+  labs(title = '', x = '', y = 'K Means Clusters')
+
+plot1a | plot2a
+```
+
+```{r}
+#Hierarchical Clustering
+
+HCluster <- hclust(dist(Normaldf))
+```
+
+```{r}
+
+plot(HCluster, xlab = '', sub = '', cex = .9) # Why does this lowkey feel like 2? Valid and Dog Water?
+```
+
+
+```{r, fig.height = 10}
+leaguedf$HClust <- as.factor(cutree(HCluster, 5))
+
+plot1a <- leaguedf %>%
+  ggplot() + 
+  geom_point(mapping = aes(x = KDA, y = WinRate, color = HClust), size = 1, alpha = 0.6) + 
+  labs(x = "KDA", y = "Win Rate") + 
+  theme_minimal()+ 
+  theme(legend.position = "none")
+
+plot1b <- leaguedf %>%
+  ggplot() +
+  geom_point(mapping = aes(x = PickBanRate, y = WinRate, color = HClust), size = 1, alpha = 0.6) + 
+  labs(x= "Pick/Ban Rate", y= "Win Rate") + 
+  theme_minimal()+ 
+  theme(legend.position = "right")+
+     guides(color = guide_legend(override.aes = list(size = 3) ) )
+
+plot1c <- leaguedf %>%
+  ggplot() + 
+  geom_boxplot(mapping = aes(x = Role, y = RoleRate, color = HClust)) +
+    labs(x = "Role", y = "Role %") + 
+  theme_minimal() + 
+  theme(legend.position = "none")
+
+
+
+((plot1a | plot1b) / plot1c )& 
+  plot_layout(guides = "collect") &
+  plot_annotation(title = "Hierarchical Cluster Analysis") 
+```
+
+```{r}
+leaguedf %>%
+  select(-c(Score, Trend, PickRate, BanRate)) %>%
+  arrange(desc(HClust))
+```
+
+This feels like the goated choice right. Feel me? We have: Underpicked and winning champions, Mid Champs, Overpicked champs that perform fine, Champs that are seriously negative, and THE FIFTH GROUP IS JUST YUUMI LMAOOOOOOO
+
