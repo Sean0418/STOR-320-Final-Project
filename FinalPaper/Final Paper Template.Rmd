@@ -2,7 +2,9 @@
 title: "Final Paper"
 author: "STOR 320.(01 OR 02) Group PLACE_GROUP_NUMBER_HERE (Ex: STOR 320.01 Group 12)"
 date: "`r format(Sys.time(), '%B %d, %Y')`"
-output: html_document
+output: 
+  html_document:
+    css: style.css
 ---
 
 ```{r setup, include=FALSE}
@@ -10,12 +12,16 @@ knitr::opts_chunk$set(echo = TRUE)
 set.seed(27) #DO NOT CHANGE THIS SEED IT IS NEEDED FOR REPRODUCABILITY SO OUR DATA WILL MAKE SENSE WITH THE WORDS WE USE PLEASE DONT CHANGE KEEP AT 27 PLEASE GOD KEEP AT 27
 library(tidyverse)
 library(patchwork)
-
+library(rje)
+library(caret)
+library(kableExtra)
+library(Boruta)
 ```
 
 # INTRODUCTION
 
 ```{r}
+
 leaguedf <- read_csv('../data_sets/S13LeagueOfLegendsData.csv', 
                       col_types=c('c', 'c', 'c', 'c', 'c', 'd', 'd', 'd', 'd', 'd', 'd', 'd', 'c'), 
                       col_names=c('rowno', 'Name', 'Class', 'Role', 'Tier', 'Score', 'Trend', "WinRate", "RoleRate", "PickRate", "BanRate", 'KDA', 'Patch'), skip=1) %>%
@@ -39,8 +45,8 @@ IN LESS THAN 6 PARAGRAPHS, YOU SHOULD DESCRIBE THE DATA USED TO ANSWER THE QUEST
 # RESULTS
 
 ```{r, echo = F}
-palette_warm <- c("#FFB347", "#9D38BD", "#FFFF00", "#C2F0F0", "#7CFC00", "#EF476F")
-palette_cool <- c("#A2B5CF", "#E7DD49", "#8FB0C5", "#F7CAC9", "#C2E0CB", "#D7BDE2")
+KMeansPalette <- c("#FFB347", "#9D38BD", "#e4ff33", "#2dd7ed", "#7CFC00", "#EF476F")
+TierPalette <- c("#A2B5CF", "#E7DD49", "#8FB0C5", "#F7CAC9", "#C2E0CB", "#D7BDE2")
 
 
 ```
@@ -54,7 +60,7 @@ palette_cool <- c("#A2B5CF", "#E7DD49", "#8FB0C5", "#F7CAC9", "#C2E0CB", "#D7BDE
 #This is a high dimensional Data set
 
 Normaldf <- leaguedf %>%
-  select(-c(Tier, Score, Trend, PickBanRate)) %>%
+  select(-c(Tier, Score, Trend, PickRate, BanRate)) %>%
     pivot_wider(names_from = Role,
               values_from = Role,
               values_fn = function(x) 1,
@@ -71,8 +77,7 @@ Normaldf <- leaguedf %>%
   mutate(
     WinRate = (WinRate - mean(WinRate))/sd(WinRate),
     RoleRate = (RoleRate - mean(RoleRate))/ sd(RoleRate),
-    PickRate = (PickRate - mean(PickRate)) / sd(PickRate),
-    BanRate = (BanRate - mean(BanRate)) / sd(BanRate),
+    PickBanRate = (PickBanRate - mean(PickBanRate)) / sd(PickBanRate),
     KDA = (KDA - mean(KDA)) / sd(KDA),
     Patch = (Patch -mean(Patch)) / sd(Patch)
   )
@@ -108,23 +113,23 @@ plot1a <- leaguedf %>%
   labs(x = "KDA", y = "Win Rate") + 
   theme_minimal()+ 
   theme(legend.position = "none") + 
-  scale_color_manual(values = palette_warm)
+  scale_color_manual(values = KMeansPalette)
 
 plot1b <- leaguedf %>%
   ggplot() +
   geom_point(mapping = aes(x = PickBanRate, y = WinRate, color = Cluster), size = 0.75, alpha = 0.4) + 
   labs(x= "Pick/Ban Rate", y= "") + 
   theme_minimal()+ 
-  scale_color_manual(values = palette_warm)+ 
+  scale_color_manual(values = KMeansPalette)+ 
   theme(legend.position = "bottom")+
      guides(color = guide_legend(override.aes = list(size = 3) ) )
 
 plot1c <- leaguedf %>%
   ggplot() + 
-  geom_boxplot(mapping = aes(x = Role, y = RoleRate, color = Cluster)) +
+  geom_boxplot(mapping = aes(x = Role, y = RoleRate, color = Cluster), lwd = 0.5) +
     labs(x = "Role", y = "Role %") + 
   theme_minimal() + 
-  scale_color_manual(values = palette_warm)+ 
+  scale_color_manual(values = KMeansPalette)+ 
   theme(legend.position = "none")
 design <- "
 12
@@ -147,7 +152,7 @@ plot1a <- leaguedf %>%
   geom_point(mapping = aes(x = KDA, y = WinRate, color = Tier), size = 0.75, alpha = 0.4) + 
   labs(x = "KDA", y = "Win Rate") + 
   theme_minimal()+ 
-  scale_color_manual(values = palette_cool)+ 
+  scale_color_manual(values = TierPalette)+ 
   theme(legend.position = "none")
 
 plot1b <- leaguedf %>%
@@ -155,15 +160,15 @@ plot1b <- leaguedf %>%
   geom_point(mapping = aes(x = PickBanRate, y = WinRate, color = Tier), size = 0.75, alpha = 0.4) + 
   labs(x= "Pick/Ban Rate", y= "") + 
   theme_minimal()+ 
-  scale_color_manual(values = palette_cool)+ 
+  scale_color_manual(values = TierPalette)+ 
   theme(legend.position = "bottom")+
      guides(color = guide_legend(override.aes = list(size = 3)))
 
 plot1c <- leaguedf %>%
   ggplot() + 
-  geom_boxplot(mapping = aes(x = Role, y = RoleRate, color = Tier)) + 
+  geom_boxplot(mapping = aes(x = Role, y = RoleRate, color = Tier), lwd= 0.5) + 
   labs(x = "Role", y = "Role %") + 
-  scale_color_manual(values = palette_cool)+ 
+  scale_color_manual(values = TierPalette)+ 
   theme_minimal() + 
   theme(legend.position = "none")
 
@@ -178,35 +183,13 @@ Meta_Tiers <- wrap_elements(plot1a + plot1b + plot1c + guide_area() +
 ```
 
 ```{r, fig.height = 10, fig.width = 10}
-
-#If we use pickbanrate instead of pick rate and ban rate we get a much more interesting clustering with Heirarchical clustering
-
-Normaldf2 <- leaguedf %>%
-  select(-c(Tier, Score, Trend, PickRate, BanRate)) %>%
-    pivot_wider(names_from = Role,
-              values_from = Role,
-              values_fn = function(x) 1,
-              values_fill = 0) %>%
-    mutate(Class = paste("Class: ", Class, sep = '')) %>%
-    pivot_wider(names_from = Class,
-                values_from = Class,
-                values_fn = function(x) 1,
-                values_fill = 0) %>%
-    pivot_wider(names_from = Name,
-                values_from = Name,
-                values_fn = function(x) 1,
-                values_fill =0) %>%
-  mutate(
-    WinRate = (WinRate - mean(WinRate))/sd(WinRate),
-    RoleRate = (RoleRate - mean(RoleRate))/ sd(RoleRate),
-    PickBanRate = (PickBanRate - mean(PickBanRate)) / sd(PickBanRate),
-    KDA = (KDA - mean(KDA)) / sd(KDA),
-    Patch = (Patch -mean(Patch)) / sd(Patch)
-  )
-
-HCluster <- hclust(dist(Normaldf2))
+#Hierarchical Clustering
+HCluster <- hclust(dist(Normaldf))
 
 plot(HCluster, xlab = '', sub = '', cex = .9) #Dendrogram!!!
+```
+
+```{r, fig.height = 10, fig.width = 10}
 
 leaguedf$HClust <- as.factor(cutree(HCluster, 5))
 
@@ -227,7 +210,7 @@ plot1b <- leaguedf %>%
 
 plot1c <- leaguedf %>%
   ggplot() + 
-  geom_boxplot(mapping = aes(x = Role, y = RoleRate, color = HClust)) +
+  geom_boxplot(mapping = aes(x = Role, y = RoleRate, color = HClust), lwd = 0.5) +
     labs(x = "Role", y = "Role %") + 
   theme_minimal() + 
   theme(legend.position = "none")
@@ -238,10 +221,28 @@ plot1c <- leaguedf %>%
   plot_layout(guides = "collect") &
   plot_annotation(title = "Hierarchical Cluster Analysis")  & theme(plot.title = element_text(hjust = 0.5, size = 15, face = 'bold'))
 ```
-
 ```{r}
+leaguedf %>%
+  rename(`Hierarchical Cluster` = HClust) %>%
+  group_by(`Hierarchical Cluster`) %>%
+  summarize(
+            `Mean Win Rate` = mean(WinRate),
+            `Mean PB Rate` = mean(PickBanRate),
+            `Mean Role %` = mean(RoleRate),
+            `Mean KDA` = mean(KDA),
+            `Median Patch` = median(Patch),
+            `Number of Champs` = n_distinct(Name)) %>%
+  kbl() %>%
+  kable_classic(full_width = F, html_font = "Times New Roman")
+```
+- Temporary Names for groups:
+  - 1: Below Average win rate champs, possibly overpicked
+  - 2: Above Average win rate champs, generally underpicked
+  - 3: very low win rate champs
+  - 4: highly picked champs
+  - 5: Yuumi <3
 
-
+```{r, message = F}
 Propdf <- leaguedf %>%
   group_by(Tier, Cluster) %>%
   summarize(count = n()) %>%
@@ -252,14 +253,92 @@ Propdf <- leaguedf %>%
 
 heatplot <- Propdf %>%
   ggplot() +
-  geom_tile(mapping = aes(x = Tier, y = Cluster, fill = Proportion))
+  geom_tile(mapping = aes(x = Tier, y = Cluster, fill = Proportion)) & 
+  theme_minimal()
 
-heatplot
+heatplot & plot_annotation(title = "Similarity Heatmap", subtitle="This should feel close to a confusion matrix")
+```
+
+Part 2: Classification Exploration
+
+```{r, eval = T}
+
+#Feature Selection
+
+boruta <- Boruta(Tier ~ ., data = select(leaguedf, -c(Score, Trend, Cluster, HClust)))
+
+plot(boruta, las = 2, cex.axis = 0.7)
+```
+
+From the Boruta plot, we can see that WinRate is likely most important, and importantly it will be better for our model to train it on PickRate and BanRate as opposed to PickBanRate. While PickBanRate is still an important variable, we choose to not include it as it overrepresents the value of Picks and Bans in a champions tier, where it could potentially be counted twice as opposed to WinRate, which could only be counted once. Additionally, we see that Patch is least important, but is not unimportant in prediction, which is interesting and suggests that there possibly may be differences between Tier Distributions for patches at some level. 
+
+```{r}
+#Data Splitting 
+
+ModelFrame <- leaguedf %>%
+  select(-c(PickBanRate, HClust, Cluster, Score, Trend))
+
+
+inTrain <- createDataPartition(y=ModelFrame$Tier, p=0.75, list=FALSE) 
+
+leagueTrain <- ModelFrame[ inTrain, ]
+leagueTest <- ModelFrame[ -inTrain, ]
 
 ```
+
+```{r, eval = F}
+#Model Fitting
+grid <- expand.grid(mtry = c(6,9,12), splitrule=c("extratrees", "gini"), min.node.size=c(1,3,6,10))
+
+fitControl <- trainControl(method='CV', number = 5, verboseIter=FALSE)
+
+fit <- train(Tier ~ .,
+             data=leagueTrain,
+             method="ranger",
+             tuneGrid=grid,
+             trControl = fitControl, importance="impurity"
+)
+
+saveRDS(fit, "Fit.rds")
+```
+
+```{r, echo = F}
+fit <- readRDS("Fit.rds")
 ```
 
 
+```{r, fig.width = 10}
+#Visualization #1
+acc_plot <- fit$results %>%  
+  mutate(mtry = as.character(mtry), min.node.size = as.character(min.node.size)) %>%
+  mutate(mtry = factor(mtry, levels=c("6", "9", "12", "15"), ordered=TRUE),
+         min.node.size = factor(min.node.size, levels = c("1","3", "6", "10"), ordered=TRUE)) %>%
+  ggplot() + geom_tile(mapping = aes(x=mtry, y=min.node.size, fill=Accuracy)) + facet_wrap(splitrule ~.) + ggtitle("Accuracy for each value") + theme(legend.position = "bottom")
+
+rf_pred <- predict(fit, leagueTest)
+
+cm <- confusionMatrix(rf_pred, leagueTest$Tier, dnn = c("Prediction", "Actual"))
+plt <- as.data.frame(cm$table) %>%
+  group_by(Actual) %>%
+  mutate(percent = Freq / sum(Freq))
+
+plt$Prediction <- factor(plt$Prediction, levels=rev(levels(plt$Prediction)))
+cm_plot <- ggplot(plt, aes(Prediction,Actual, fill=percent)) +
+        geom_tile() + geom_text(aes(label=Freq)) +
+        scale_fill_gradient(low="white", high="#009194") +
+        labs(x = "Actual",y = "Prediction", title = "Confusion Matrix") +
+        scale_y_discrete(labels=c('D', 'C', 'B', 'A', 'S', 'God')) +
+        scale_x_discrete(labels=c('God', 'S', 'A', 'B', 'C', 'D')) + theme_minimal() + theme(legend.position = "bottom")
+acc_plot + cm_plot
+```
+
+```{r}
+#Cross validation is expected
+#Assign each row to a number, 1 throuhg 10
+#Test accuracy on each group to see when we are over/under accurate
+leaguedf$sample <- floor(runif(nrow(leaguedf), min = 0, max = 10))
+
+```
 # CONCLUSION
 IN LESS THAN 4 PARAGRAPHS, YOU SHOULD RESTATE YOUR QUESTIONS ALONG WITH YOUR CONCLUSIONS. THE PURPOSE OF THIS SECTION IS TO SUMMARIZE YOUR FINDINGS (SHORT), DEFEND THE IMPORTANCE OF YOUR RESULTS IN THE REAL WORLD (LONG), AND PROVIDE A ROADMAP FOR OTHERS TO CONTINUE THIS WORK (LONG). ARE YOUR CONCLUSIONS WHAT YOU EXPECTED OR UNUSUAL? WHY SHOULD SOMEONE CARE ABOUT THESE RESULTS? HOW COULD THESE RESULTS BE USED IN THE REAL WORLD? YOU SHOULD PROVIDE IDEAS ABOUT FUTURE DIRECTIONS ON WHERE YOUR MODELING COULD POSSIBLY BE IMPROVED. ARE THERE ANY METHODS YOU DIDN'T USE THAT MAY WORK BETTER? IS THERE DATA YOU DIDN'T HAVE ACCESS TO THAT MAY BE USEFUL IN THIS DATA ANALYSIS? 
 
