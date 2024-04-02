@@ -1,0 +1,271 @@
+---
+title: "Final Paper"
+author: "STOR 320.(01 OR 02) Group PLACE_GROUP_NUMBER_HERE (Ex: STOR 320.01 Group 12)"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(27) #DO NOT CHANGE THIS SEED IT IS NEEDED FOR REPRODUCABILITY SO OUR DATA WILL MAKE SENSE WITH THE WORDS WE USE PLEASE DONT CHANGE KEEP AT 27 PLEASE GOD KEEP AT 27
+library(tidyverse)
+library(patchwork)
+
+```
+
+# INTRODUCTION
+
+```{r}
+leaguedf <- read_csv('../data_sets/S13LeagueOfLegendsData.csv', 
+                      col_types=c('c', 'c', 'c', 'c', 'c', 'd', 'd', 'd', 'd', 'd', 'd', 'd', 'c'), 
+                      col_names=c('rowno', 'Name', 'Class', 'Role', 'Tier', 'Score', 'Trend', "WinRate", "RoleRate", "PickRate", "BanRate", 'KDA', 'Patch'), skip=1) %>%
+  column_to_rownames("rowno") %>% 
+  mutate(PickBanRate = PickRate + BanRate, 
+         Patch = as.numeric(str_replace(Patch, '(.*?)_(.*?)', '')), 
+         Role = str_to_title(Role))
+leaguedf$Tier = as.factor(leaguedf$Tier) %>%
+  fct_relevel(c("God", "S", "A", "B", "C", "D"))
+
+head(leaguedf, 5)
+
+```
+
+AFTER WORKING WITH THE DATA AND DISCUSSING THE INFORMATION WITH YOUR GROUP, YOU SHOULD DESCRIBE 2 QUESTIONS THAT ARE CREATIVE AND INNOVATIVE. YOU SHOULD EXPLAIN WHY THESE QUESTIONS ARE INTERESTING AND WHY THEY DESERVE FURTHER INVESTIGATION. I ADVISE TO THINK OF REASONS WHY AN OWNER OF THE DATA MIGHT BENEFIT FROM ANSWERS TO THESE QUESTIONS. THINK OF REASONS WHY THE WORLD MAY BE INTERESTED IN THESE QUESITONS. THE PURPOSE OF THE INTRODUCTION IS TO STATE SOME INTERESTING QUESTIONS AND DEFEND THE VALUE OF THESE QUESTIONS. THIS INTRODUCTION SHOULD BE WRITTEN IN A WAY THAT SHOULD GET THE READER EXCITED ABOUT SEEING YOUR RESULTS. THIS SHOULD BE WRITTEN IN NO MORE THAN 4 PARAGRAPHS.
+
+# DATA
+
+IN LESS THAN 6 PARAGRAPHS, YOU SHOULD DESCRIBE THE DATA USED TO ANSWER THE QUESTIONS. YOU SHOULD EXPLAIN WHERE THE DATA ORIGINATED. FOR EXAMPLE, IT IS GOOD TO KNOW WHO COLLECTED THE DATA. JUST BECAUSE THE DATA CAME FROM KAGGLE, DOESN'T MEAN KAGGLE.COM COLLECTED THE DATA. GIVE AN IN-DEPTH DESCRIPTION OF THE SPECIFIC VARIABLES IN THE DATA REQUIRED TO ANSWER YOUR QUESTIONS. YOU SHOULDN'T DISCUSS ALL VARIABLES IN THE DATA IF YOU DIDN'T USE ALL VARIABLES IN THE DATA. YOU SHOULD EXPLAIN WHAT EACH OBSERVATION REPRESENTS (I.E. PEOPLE, SCHOOLS, STATES, CITIES, PATIENTS FROM A SPECIFIC HOSPITAL). WHAT IS THIS A SAMPLE OF? HOW MANY OBSERVATIONS DO YOU HAVE? AFTER READING THIS SECTION, THE READER SHOULD CLEARLY UNDERSTAND THE SOURCE AND CONTENT OF THE DATA YOU PLAN ON UTILIZING TO ANSWER YOUR QUESTIONS THAT YOU PROPOSED IN THE INTRODUCTION. AT LEAST ONE, DESCRIPTIVE TABLE AND AT LEAST ONE FIGURE SHOULD BE USED HERE TO HELP THE READER UNDERSTAND WHAT THE DATA LOOKS LIKE WITHOUT SEEING THE ENTIRE DATASET. IN ALL FIGURES AND TABLES, ONLY THE VARIABLES OF INTEREST SHOULD BE USED.
+
+# RESULTS
+
+```{r, echo = F}
+palette_warm <- c("#FFB347", "#9D38BD", "#FFFF00", "#C2F0F0", "#7CFC00", "#EF476F")
+palette_cool <- c("#A2B5CF", "#E7DD49", "#8FB0C5", "#F7CAC9", "#C2E0CB", "#D7BDE2")
+
+
+```
+
+```{r, fig.height = 10, fig.width = 10}
+#Cluster Analysis with K-Means
+
+
+#Step 1: Normalize Data:
+#First drop icky Vars and then Dummy encode Name, Class, and Role
+#This is a high dimensional Data set
+
+Normaldf <- leaguedf %>%
+  select(-c(Tier, Score, Trend, PickBanRate)) %>%
+    pivot_wider(names_from = Role,
+              values_from = Role,
+              values_fn = function(x) 1,
+              values_fill = 0) %>%
+    mutate(Class = paste("Class: ", Class, sep = '')) %>%
+    pivot_wider(names_from = Class,
+                values_from = Class,
+                values_fn = function(x) 1,
+                values_fill = 0) %>%
+    pivot_wider(names_from = Name,
+                values_from = Name,
+                values_fn = function(x) 1,
+                values_fill =0) %>%
+  mutate(
+    WinRate = (WinRate - mean(WinRate))/sd(WinRate),
+    RoleRate = (RoleRate - mean(RoleRate))/ sd(RoleRate),
+    PickRate = (PickRate - mean(PickRate)) / sd(PickRate),
+    BanRate = (BanRate - mean(BanRate)) / sd(BanRate),
+    KDA = (KDA - mean(KDA)) / sd(KDA),
+    Patch = (Patch -mean(Patch)) / sd(Patch)
+  )
+  
+#Step 2: Clusterize the Data
+
+data <- kmeans(Normaldf, centers = 6, nstart = 25)
+
+leaguedf$Cluster = as.factor(data$cluster)
+
+#Reproducibility for Graphing purposes
+
+ordering <- leaguedf %>%
+  group_by(Cluster) %>%
+  summarize(RoleRate = mean(RoleRate)) %>%
+  arrange(RoleRate) %>%
+  mutate(transformation = row_number())
+
+transform <- function (x) {
+  temp <- ordering %>%
+    filter(Cluster == x)
+  return (temp[[1, 3]])
+}
+
+leaguedf$Cluster <- sapply(leaguedf$Cluster, transform)
+
+leaguedf <- leaguedf %>%
+  mutate(Cluster = as.factor(Cluster))
+
+plot1a <- leaguedf %>%
+  ggplot() + 
+  geom_point(mapping = aes(x = KDA, y = WinRate, color = Cluster), size = 0.75, alpha = 0.4) + 
+  labs(x = "KDA", y = "Win Rate") + 
+  theme_minimal()+ 
+  theme(legend.position = "none") + 
+  scale_color_manual(values = palette_warm)
+
+plot1b <- leaguedf %>%
+  ggplot() +
+  geom_point(mapping = aes(x = PickBanRate, y = WinRate, color = Cluster), size = 0.75, alpha = 0.4) + 
+  labs(x= "Pick/Ban Rate", y= "") + 
+  theme_minimal()+ 
+  scale_color_manual(values = palette_warm)+ 
+  theme(legend.position = "bottom")+
+     guides(color = guide_legend(override.aes = list(size = 3) ) )
+
+plot1c <- leaguedf %>%
+  ggplot() + 
+  geom_boxplot(mapping = aes(x = Role, y = RoleRate, color = Cluster)) +
+    labs(x = "Role", y = "Role %") + 
+  theme_minimal() + 
+  scale_color_manual(values = palette_warm)+ 
+  theme(legend.position = "none")
+design <- "
+12
+12
+12
+12
+33
+33
+33
+33
+44"
+
+KMeans <- wrap_elements(plot1a + plot1b + plot1c + guide_area() + 
+  plot_layout(design = design, guides = "collect") &
+  plot_annotation(title = "K Means"))
+
+
+plot1a <- leaguedf %>%
+  ggplot() + 
+  geom_point(mapping = aes(x = KDA, y = WinRate, color = Tier), size = 0.75, alpha = 0.4) + 
+  labs(x = "KDA", y = "Win Rate") + 
+  theme_minimal()+ 
+  scale_color_manual(values = palette_cool)+ 
+  theme(legend.position = "none")
+
+plot1b <- leaguedf %>%
+  ggplot() +
+  geom_point(mapping = aes(x = PickBanRate, y = WinRate, color = Tier), size = 0.75, alpha = 0.4) + 
+  labs(x= "Pick/Ban Rate", y= "") + 
+  theme_minimal()+ 
+  scale_color_manual(values = palette_cool)+ 
+  theme(legend.position = "bottom")+
+     guides(color = guide_legend(override.aes = list(size = 3)))
+
+plot1c <- leaguedf %>%
+  ggplot() + 
+  geom_boxplot(mapping = aes(x = Role, y = RoleRate, color = Tier)) + 
+  labs(x = "Role", y = "Role %") + 
+  scale_color_manual(values = palette_cool)+ 
+  theme_minimal() + 
+  theme(legend.position = "none")
+
+
+Meta_Tiers <- wrap_elements(plot1a + plot1b + plot1c + guide_area() + 
+  plot_layout(design = design, guides = "collect") &
+  plot_annotation(title = "Meta SRC Tier"))
+
+
+(KMeans | Meta_Tiers) & plot_annotation(title = "Cluster Analysis") & 
+  theme(plot.title = element_text(hjust = 0.5, size = 15, face = 'bold')) 
+```
+
+```{r, fig.height = 10, fig.width = 10}
+
+#If we use pickbanrate instead of pick rate and ban rate we get a much more interesting clustering with Heirarchical clustering
+
+Normaldf2 <- leaguedf %>%
+  select(-c(Tier, Score, Trend, PickRate, BanRate)) %>%
+    pivot_wider(names_from = Role,
+              values_from = Role,
+              values_fn = function(x) 1,
+              values_fill = 0) %>%
+    mutate(Class = paste("Class: ", Class, sep = '')) %>%
+    pivot_wider(names_from = Class,
+                values_from = Class,
+                values_fn = function(x) 1,
+                values_fill = 0) %>%
+    pivot_wider(names_from = Name,
+                values_from = Name,
+                values_fn = function(x) 1,
+                values_fill =0) %>%
+  mutate(
+    WinRate = (WinRate - mean(WinRate))/sd(WinRate),
+    RoleRate = (RoleRate - mean(RoleRate))/ sd(RoleRate),
+    PickBanRate = (PickBanRate - mean(PickBanRate)) / sd(PickBanRate),
+    KDA = (KDA - mean(KDA)) / sd(KDA),
+    Patch = (Patch -mean(Patch)) / sd(Patch)
+  )
+
+HCluster <- hclust(dist(Normaldf2))
+
+plot(HCluster, xlab = '', sub = '', cex = .9) #Dendrogram!!!
+
+leaguedf$HClust <- as.factor(cutree(HCluster, 5))
+
+plot1a <- leaguedf %>%
+  ggplot() + 
+  geom_point(mapping = aes(x = KDA, y = WinRate, color = HClust), size = 0.6, alpha = 0.8) + 
+  labs(x = "KDA", y = "Win Rate") + 
+  theme_minimal()+ 
+  theme(legend.position = "none")
+
+plot1b <- leaguedf %>%
+  ggplot() +
+  geom_point(mapping = aes(x = PickBanRate, y = WinRate, color = HClust), size = 0.6, alpha = 0.8) + 
+  labs(x= "Pick/Ban Rate", y= "Win Rate") + 
+  theme_minimal()+ 
+  theme(legend.position = "right")+
+     guides(color = guide_legend(override.aes = list(size = 3) ) )
+
+plot1c <- leaguedf %>%
+  ggplot() + 
+  geom_boxplot(mapping = aes(x = Role, y = RoleRate, color = HClust)) +
+    labs(x = "Role", y = "Role %") + 
+  theme_minimal() + 
+  theme(legend.position = "none")
+
+
+
+((plot1a | plot1b) / plot1c )& 
+  plot_layout(guides = "collect") &
+  plot_annotation(title = "Hierarchical Cluster Analysis")  & theme(plot.title = element_text(hjust = 0.5, size = 15, face = 'bold'))
+```
+
+```{r}
+
+
+Propdf <- leaguedf %>%
+  group_by(Tier, Cluster) %>%
+  summarize(count = n()) %>%
+  ungroup() %>%
+  group_by(Tier) %>%
+  mutate(Proportion = count / sum(count)) %>%
+  arrange(desc(Proportion))
+
+heatplot <- Propdf %>%
+  ggplot() +
+  geom_tile(mapping = aes(x = Tier, y = Cluster, fill = Proportion))
+
+heatplot
+
+```
+```
+
+
+# CONCLUSION
+IN LESS THAN 4 PARAGRAPHS, YOU SHOULD RESTATE YOUR QUESTIONS ALONG WITH YOUR CONCLUSIONS. THE PURPOSE OF THIS SECTION IS TO SUMMARIZE YOUR FINDINGS (SHORT), DEFEND THE IMPORTANCE OF YOUR RESULTS IN THE REAL WORLD (LONG), AND PROVIDE A ROADMAP FOR OTHERS TO CONTINUE THIS WORK (LONG). ARE YOUR CONCLUSIONS WHAT YOU EXPECTED OR UNUSUAL? WHY SHOULD SOMEONE CARE ABOUT THESE RESULTS? HOW COULD THESE RESULTS BE USED IN THE REAL WORLD? YOU SHOULD PROVIDE IDEAS ABOUT FUTURE DIRECTIONS ON WHERE YOUR MODELING COULD POSSIBLY BE IMPROVED. ARE THERE ANY METHODS YOU DIDN'T USE THAT MAY WORK BETTER? IS THERE DATA YOU DIDN'T HAVE ACCESS TO THAT MAY BE USEFUL IN THIS DATA ANALYSIS? 
+
+
+
+
+
+
+
