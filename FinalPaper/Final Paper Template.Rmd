@@ -16,9 +16,65 @@ library(rje)
 library(caret)
 library(kableExtra)
 library(Boruta)
+library(plotly)
+```
+
+```{r, echo= FALSE}
+annotations = list( 
+  list( 
+    x = 0.015,  
+    y = 1.0,  
+    text = "Adc",  
+    xref = "paper",  
+    yref = "paper",  
+    xanchor = "center",  
+    yanchor = "bottom",  
+    showarrow = FALSE 
+  ),  
+  list( 
+    x = 0.3925,  
+    y = 1,  
+    text = "Jungle",  
+    xref = "paper",  
+    yref = "paper",  
+    xanchor = "center",  
+    yanchor = "bottom",  
+    showarrow = FALSE 
+  ),  
+  list( 
+    x = 0.715,  
+    y = 1,  
+    text = "Mid",  
+    xref = "paper",  
+    yref = "paper",  
+    xanchor = "center",  
+    yanchor = "bottom",  
+    showarrow = FALSE 
+  ),
+  list( 
+    x = 0.0375,  
+    y = 0.46,  
+    text = "Support",  
+    xref = "paper",  
+    yref = "paper",  
+    xanchor = "center",  
+    yanchor = "bottom",  
+    showarrow = FALSE 
+  ), 
+  list( 
+    x = 0.38,  
+    y = 0.46,  
+    text = "Top",  
+    xref = "paper",  
+    yref = "paper",  
+    xanchor = "center",  
+    yanchor = "bottom",  
+    showarrow = FALSE 
+  ))
 ```
 
 # INTRODUCTION
+
 
 ```{r}
 
@@ -40,6 +96,147 @@ AFTER WORKING WITH THE DATA AND DISCUSSING THE INFORMATION WITH YOUR GROUP, YOU 
 
 # DATA
 
+```{r, message = F}
+tempchamps <- leaguedf %>%
+  complete(nesting(Name, Role), Patch) %>% # This explicitly finds champions who were only played in a role significantly for less than all of the patches!
+  filter(!complete.cases(.)) %>%
+  count(Name, Role)
+
+tempdf <- leaguedf %>%
+  filter(Name %in% tempchamps$Name & complete.cases(.)) %>%
+  group_by(Name, Role) %>%
+  summarize(
+    n = n(),
+    meanWinRate = mean(WinRate),
+    sdWinRate = sd(WinRate),
+    meanPickBan = mean(PickBanRate),
+    sdPickBan = sd(PickBanRate), 
+    label = paste(Name, '\n', Role, sep = " ")
+  ) %>%
+  filter(n != 23)
+
+tempdf %>%
+  mutate(meanWinRate = meanWinRate * 100, meanPickBan = meanPickBan * 100) %>%
+  ggplot(aes(x = meanWinRate, y = meanPickBan)) + geom_point(mapping = aes(size = 1/n)) +
+  geom_text(aes(label = label, color = Role), size = 3, nudge_x = 0.5, check_overlap = T) + #Consider removing? Is it too much stuff?
+  geom_vline(xintercept = 50, color = 'red') + 
+  coord_trans(x = 'log10', y = 'log10') + 
+  labs(x = "Win Rate Average", y = "Pick Ban Rate Average", title = "Win Rate vs Pick Ban Rate for Temporary champions", subtitle = "Size is invertly proportional to number of patches present") + 
+  theme_minimal()
+```
+
+```{r, message = F, warning = F}
+leaguedf %>%
+  select("Name", "PickBanRate", "WinRate", "Role", "RoleRate", "Class", "Patch") %>%
+  filter(!(Class == "NULL")) %>%
+  group_by(Role) %>%
+  group_map( ~ plot_ly(data = .,
+      x = ~ PickBanRate,
+      y = ~ WinRate,
+      color = ~ Class,
+      text = ~ Name,
+      frame = ~ Patch, 
+      hoverinfo = "text",
+      type = "scatter",
+      mode = "markers", 
+      marker = list(size = ~ RoleRate*5)
+      ), .keep = TRUE) %>%
+  subplot(nrows = 2, shareX = TRUE, shareY=TRUE, margin=0.03) %>%
+  layout(showlegend = FALSE, title = 'Pick Ban Rate vs. Win Rate by Patch seperated by Role',
+         plot_bgcolor='#e5ecf6', 
+         xaxis = list( 
+           zerolinecolor = '#ffff', 
+           zerolinewidth = 2, 
+           gridcolor = 'ffff'), 
+         yaxis = list( 
+           zerolinecolor = '#ffff', 
+           zerolinewidth = 2, 
+           gridcolor = 'ffff'),
+         margin = 0.07) %>%
+  layout(annotations = annotations)
+
+```
+
+
+
+```{r, echo = F}
+
+
+MakeCorrelationDf <- function(varname, outputname = varname) {
+  head(leaguedf)
+  tempdf <- leaguedf %>%
+    pivot_wider(id_cols = c("Name", "Role"), names_from = "Patch", values_from = varname) %>%
+    mutate(ID = paste(Name, Role, sep = ' ')) %>%
+    select(-c(1, 2)) %>%
+    na.omit()
+  NameList <- tempdf$ID
+  
+  tempdf <- tempdf %>%
+    t() %>%
+    as_tibble() %>%
+    filter(row_number() < n()) %>%
+    mutate_if(is.character, as.numeric)
+
+  
+  colnames(tempdf) <- NameList
+  tempdf <- as_tibble(cor(tempdf))
+  rownames(tempdf) <- colnames(tempdf)
+  tempdf <- tempdf %>%
+    rownames_to_column(var = "Champion1") %>%
+    gather(key = "Champion2", value = !!paste(outputname, "Correlation", sep = ''), -Champion1) %>%
+    filter(!(.by = Champion1 == Champion2))
+  
+  return(tempdf)
+}
+```
+
+```{r, warning = F}
+PbrCorrelation <- MakeCorrelationDf("PickBanRate", "Pbr") %>%
+  group_by(Champion2) %>%
+  arrange(PbrCorrelation) %>%
+  mutate(label = case_when(
+    row_number() <= 2 ~ str_to_title(str_replace(Champion1, '\\.', ' ')),
+    row_number() > n() - 2 ~ str_to_title(str_replace(Champion1, '\\.', ' ')), # This adds a Space into the name where the . is  and uncapitalizes the second role
+    Champion2 == "Tahm Kench.Support" & PbrCorrelation > 0.68 ~ "Senna Support", # This is an outlier so labeling is justified, especially since it helps show the part of the plot
+    TRUE ~ as.character(NA)
+  )) 
+
+PbrCorrelation %>% filter(Champion2 %in% c("Tahm Kench Support", "Senna Support", "Ashe Adc")) %>% 
+  ggplot(mapping = aes(x=Champion2, y = PbrCorrelation)) + 
+  geom_boxplot() + 
+  ggtitle("PBR Correlation Boxplot")+ 
+  scale_x_discrete(labels = c("Ashe Adc", "Senna Support", "Tahm Kench Support")) + 
+  labs(x = "", y = "Pick Ban Rate Correlation Coefficient", caption = "Minimum and Maximum corelation coefficients are annotated, as well as Senna Support for Tahm Kench Support in order\n to best visualize how the strength of certain counters, replacements, and synergies effect Pick Ban Rate.")  + 
+  geom_text(aes(label = label), na.rm = TRUE, hjust = -0.1, size = 3, check_overlap = T) 
+```
+
+```{r}
+leaguedf %>% 
+  group_by(Name) %>% 
+  summarise(Mean_pick=mean(PickRate, na.rm = TRUE), Std_pick=sd(PickRate, na.rm=TRUE), Mean_win=mean(WinRate, na.rm = TRUE), Std_win=sd(WinRate, na.rm=TRUE)) %>% 
+  arrange(desc(Mean_pick)) %>% 
+  ggplot(aes(Mean_pick, Std_win)) + geom_point() + labs(x = "Mean Pick Rate", y = "Standard Deviation Win Rate") + 
+  coord_trans(x = 'log10', y = 'log10') + 
+  geom_smooth(aes(x = Mean_pick, y = Std_win), method = 'lm', se = F) # THIS LOOKS NON LINEAR BUT IT IS LINEAR, ITS JUST ON A LOG SCALE!!!!
+
+```
+
+```{r, fig.height = 15}
+plot1 <- leaguedf %>%
+  filter(Name %in% c("Fiora", "Darius", "Garen", "Aatrox", "Jax"), Role == "Top") %>%
+  ggplot() + geom_count(aes(x = as.factor(Patch), y = Name, size = PickRate, color = Name)) + labs(x = "Patch", y = "Name", title = "Pick Rate")
+
+plot2 <- leaguedf %>%
+  filter(Name %in% c("Fiora", "Darius", "Garen", "Aatrox", "Jax"), Role == "Top") %>%
+  ggplot() + geom_count(aes(x = as.factor(Patch), y = Name, size = BanRate, color = Name)) + labs(x = "Patch", y = "Name", title = "Ban Rate")
+
+plot3 <- leaguedf %>%
+  filter(Name %in% c("Fiora", "Darius", "Garen", "Aatrox", "Jax"), Role == "Top") %>%
+  ggplot() + geom_count(aes(x = as.factor(Patch), y = Name, size = WinRate, color = Name)) + labs(x = "Patch", y = "Name", title = "Win Rate")
+
+(plot1 / plot2/ plot3) + plot_annotation(title = "Analysis of Staple Top Champions")
+
+```
 IN LESS THAN 6 PARAGRAPHS, YOU SHOULD DESCRIBE THE DATA USED TO ANSWER THE QUESTIONS. YOU SHOULD EXPLAIN WHERE THE DATA ORIGINATED. FOR EXAMPLE, IT IS GOOD TO KNOW WHO COLLECTED THE DATA. JUST BECAUSE THE DATA CAME FROM KAGGLE, DOESN'T MEAN KAGGLE.COM COLLECTED THE DATA. GIVE AN IN-DEPTH DESCRIPTION OF THE SPECIFIC VARIABLES IN THE DATA REQUIRED TO ANSWER YOUR QUESTIONS. YOU SHOULDN'T DISCUSS ALL VARIABLES IN THE DATA IF YOU DIDN'T USE ALL VARIABLES IN THE DATA. YOU SHOULD EXPLAIN WHAT EACH OBSERVATION REPRESENTS (I.E. PEOPLE, SCHOOLS, STATES, CITIES, PATIENTS FROM A SPECIFIC HOSPITAL). WHAT IS THIS A SAMPLE OF? HOW MANY OBSERVATIONS DO YOU HAVE? AFTER READING THIS SECTION, THE READER SHOULD CLEARLY UNDERSTAND THE SOURCE AND CONTENT OF THE DATA YOU PLAN ON UTILIZING TO ANSWER YOUR QUESTIONS THAT YOU PROPOSED IN THE INTRODUCTION. AT LEAST ONE, DESCRIPTIVE TABLE AND AT LEAST ONE FIGURE SHOULD BE USED HERE TO HELP THE READER UNDERSTAND WHAT THE DATA LOOKS LIKE WITHOUT SEEING THE ENTIRE DATASET. IN ALL FIGURES AND TABLES, ONLY THE VARIABLES OF INTEREST SHOULD BE USED.
 
 # RESULTS
@@ -221,6 +418,7 @@ plot1c <- leaguedf %>%
   plot_layout(guides = "collect") &
   plot_annotation(title = "Hierarchical Cluster Analysis")  & theme(plot.title = element_text(hjust = 0.5, size = 15, face = 'bold'))
 ```
+
 ```{r}
 leaguedf %>%
   rename(`Hierarchical Cluster` = HClust) %>%
@@ -304,6 +502,7 @@ saveRDS(fit, "Fit.rds")
 
 ```{r, echo = F}
 fit <- readRDS("Fit.rds")
+leaguedf$Pred <- predict(fit, ModelFrame)
 ```
 
 
@@ -330,6 +529,27 @@ cm_plot <- ggplot(plt, aes(Prediction,Actual, fill=percent)) +
         scale_y_discrete(labels=c('D', 'C', 'B', 'A', 'S', 'God')) +
         scale_x_discrete(labels=c('God', 'S', 'A', 'B', 'C', 'D')) + theme_minimal() + theme(legend.position = "bottom")
 acc_plot + cm_plot
+```
+
+```{r}
+#Special Analysis just for TempChamps
+
+leaguedf  %>%
+  group_by(Name, Role) %>%
+  mutate(n = n()) %>%
+  ungroup()  %>%
+  mutate(Temp = n < 23, correct = Tier == Pred) %>%
+  group_by(Temp) %>%
+  summarize(Acc = mean(correct), n = n(), sd = sd(correct))
+
+#Assume that the true probablility is correct. Then, we have H0 as Temp >= NonTemp, and H1 as Temp < NonTemp.
+
+table <- tibble(
+  NonTemporary = 0.797, Temporary = 0.781, NonTemporaryN = 4876, TemporaryN = 761, sdTemporary = 0.402, sdNonTemporary = 0.41325
+) %>%
+  mutate(diff  = NonTemporary - Temporary, z = diff/ (sqrt(sdTemporary^2 / TemporaryN + sdNonTemporary^2 / NonTemporaryN)), p = pnorm(q = z, lower.tail = F))
+
+table
 ```
 
 ```{r}
