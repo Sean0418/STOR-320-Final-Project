@@ -476,6 +476,14 @@ From the Boruta plot, we can see that WinRate is likely most important, and impo
 ModelFrame <- leaguedf %>%
   select(-c(PickBanRate, HClust, Cluster, Score, Trend))
 
+for (colname in colnames(ModelFrame)) {
+  
+  if (is.numeric(ModelFrame[[colname]])) {
+    ModelFrame[[colname]] = c(scale(ModelFrame[[colname]]))
+  }
+}
+
+
 
 inTrain <- createDataPartition(y=ModelFrame$Tier, p=0.75, list=FALSE) 
 
@@ -488,16 +496,67 @@ leagueTest <- ModelFrame[ -inTrain, ]
 #Model Fitting
 grid <- expand.grid(mtry = c(6,9,12), splitrule=c("extratrees", "gini"), min.node.size=c(1,3,6,10))
 
-fitControl <- trainControl(method='CV', number = 5, verboseIter=FALSE)
+fitControl <- trainControl(method='CV', 
+                           number = 5, 
+                           classProbs = TRUE,
+                           verboseIter=FALSE)
 
-fit <- train(Tier ~ .,
+rf_fit <- train(Tier ~ .,
              data=leagueTrain,
              method="ranger",
              tuneGrid=grid,
              trControl = fitControl, importance="impurity"
 )
 
-saveRDS(fit, "Fit.rds")
+saveRDS(rf_fit, "RF_Fit")
+```
+
+```{r, eval = F, warning = F}
+
+grid <- expand.grid(C = seq(0, 10, length = 20))
+
+
+fitControl <- trainControl(method='CV', 
+                           number = 5, 
+                           verboseIter=FALSE)
+
+svmlin_fit <- train(Tier ~ .,
+                 data = leagueTrain,
+                 method="svmLinear",
+                 trControl = fitControl,
+                 tuneGrid = grid)
+
+saveRDS(svmlin_fit, "SVMLin_Fit")
+```
+
+```{r, eval = F, warning = F}
+
+grid <- expand.grid(C = seq(4, 5, length = 5), sigma = seq(0.20, 0.3, length = 5))
+
+
+fitControl <- trainControl(method='CV', 
+                           number = 3, 
+                           verboseIter=F)
+
+svmrad_fit <- train(Tier ~ .,
+                 data = leagueTrain,
+                 method="svmRadial",
+                 trControl = fitControl,
+                 tuneGrid = grid)
+
+saveRDS(svmrad_fit, "SVMRad_Fit")
+```
+
+```{r}
+svmlin_fit$results
+#svmrad_fit$results
+```
+
+```{r}
+pc = leaguedf %>%
+  group_by(Tier) %>%
+  summarize(pc = )
+
 ```
 
 ```{r, echo = F}
@@ -505,9 +564,31 @@ fit <- readRDS("Fit.rds")
 leaguedf$Pred <- predict(fit, ModelFrame)
 ```
 
+```{r, eval=FALSE}
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+Boundarydf = expand.grid(WinRate = seq(0.4, 0.6, out=30), PickRate = seq(0.0, 0))
+Boundarydf$tier <- predict(fit, Boundarydf)
+Boundarydf <- Boundarydf %>%
+  group_by(winr, pbr) %>%
+  summarize(tier = Mode(tier)) %>%
+  ungroup()
+
+write.csv(Boundarydf, "BoundaryFrame.csv")
+
+
+```
+
+```{r, echo=FALSE, eval = F} 
+#CHange Eval after Frame is created
+Boundarydf <- read_csv("BoundaryFrame.csv")
+```
 
 ```{r, fig.width = 10}
-#Visualization #1
+#Visualization #1 for Ranger Model
 acc_plot <- fit$results %>%  
   mutate(mtry = as.character(mtry), min.node.size = as.character(min.node.size)) %>%
   mutate(mtry = factor(mtry, levels=c("6", "9", "12", "15"), ordered=TRUE),
@@ -519,16 +600,40 @@ rf_pred <- predict(fit, leagueTest)
 cm <- confusionMatrix(rf_pred, leagueTest$Tier, dnn = c("Prediction", "Actual"))
 plt <- as.data.frame(cm$table) %>%
   group_by(Actual) %>%
-  mutate(percent = Freq / sum(Freq))
+  mutate(Percent = Freq / sum(Freq))
 
 plt$Prediction <- factor(plt$Prediction, levels=rev(levels(plt$Prediction)))
-cm_plot <- ggplot(plt, aes(Prediction,Actual, fill=percent)) +
+cm_plot <- ggplot(plt, aes(Prediction,Actual, fill=Percent)) +
         geom_tile() + geom_text(aes(label=Freq)) +
         scale_fill_gradient(low="white", high="#009194") +
         labs(x = "Actual",y = "Prediction", title = "Confusion Matrix") +
         scale_y_discrete(labels=c('D', 'C', 'B', 'A', 'S', 'God')) +
         scale_x_discrete(labels=c('God', 'S', 'A', 'B', 'C', 'D')) + theme_minimal() + theme(legend.position = "bottom")
-acc_plot + cm_plot
+
+boundary_plot <- leaguedf %>%
+  filter(Role == 'Top'& Patch == 23 & (Class == "Fighter"| Class == "Tank"))  %>%
+  ggplot() + geom_point(mapping = aes(x = KDA, y = WinRate, color = Tier)) + geom_raster
+  
+(acc_plot + cm_plot) /boundary_plot
+```
+
+
+```{r}
+#Cross validation is expected
+#Assign each row to a number, 1 throuhg 10
+#Test accuracy on each group to see when we are over/under accurate
+leaguedf$sample <- floor(runif(nrow(leaguedf), min = 0, max = 10))
+
+leaguedf %>%
+  mutate(correct = Pred == Tier) %>%
+  group_by(sample) %>%
+  summarize(Accuracy = mean(correct), n = n(), sd = sd(correct))
+
+```
+
+
+
+```{r}
 ```
 
 ```{r}
@@ -549,22 +654,19 @@ table <- tibble(
 ) %>%
   mutate(diff  = NonTemporary - Temporary, z = diff/ (sqrt(sdTemporary^2 / TemporaryN + sdNonTemporary^2 / NonTemporaryN)), p = pnorm(q = z, lower.tail = F))
 
+
 table
 ```
 
-```{r}
-#Cross validation is expected
-#Assign each row to a number, 1 throuhg 10
-#Test accuracy on each group to see when we are over/under accurate
-leaguedf$sample <- floor(runif(nrow(leaguedf), min = 0, max = 10))
-
-```
 # CONCLUSION
 IN LESS THAN 4 PARAGRAPHS, YOU SHOULD RESTATE YOUR QUESTIONS ALONG WITH YOUR CONCLUSIONS. THE PURPOSE OF THIS SECTION IS TO SUMMARIZE YOUR FINDINGS (SHORT), DEFEND THE IMPORTANCE OF YOUR RESULTS IN THE REAL WORLD (LONG), AND PROVIDE A ROADMAP FOR OTHERS TO CONTINUE THIS WORK (LONG). ARE YOUR CONCLUSIONS WHAT YOU EXPECTED OR UNUSUAL? WHY SHOULD SOMEONE CARE ABOUT THESE RESULTS? HOW COULD THESE RESULTS BE USED IN THE REAL WORLD? YOU SHOULD PROVIDE IDEAS ABOUT FUTURE DIRECTIONS ON WHERE YOUR MODELING COULD POSSIBLY BE IMPROVED. ARE THERE ANY METHODS YOU DIDN'T USE THAT MAY WORK BETTER? IS THERE DATA YOU DIDN'T HAVE ACCESS TO THAT MAY BE USEFUL IN THIS DATA ANALYSIS? 
 
 
 
+```{r}
 
+
+```
 
 
 
