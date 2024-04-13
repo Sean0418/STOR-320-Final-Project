@@ -92,6 +92,10 @@ head(leaguedf, 5)
 
 ```
 
+```{r, echo = F}
+
+leaguedforiginal <- leaguedf
+```
 AFTER WORKING WITH THE DATA AND DISCUSSING THE INFORMATION WITH YOUR GROUP, YOU SHOULD DESCRIBE 2 QUESTIONS THAT ARE CREATIVE AND INNOVATIVE. YOU SHOULD EXPLAIN WHY THESE QUESTIONS ARE INTERESTING AND WHY THEY DESERVE FURTHER INVESTIGATION. I ADVISE TO THINK OF REASONS WHY AN OWNER OF THE DATA MIGHT BENEFIT FROM ANSWERS TO THESE QUESTIONS. THINK OF REASONS WHY THE WORLD MAY BE INTERESTED IN THESE QUESITONS. THE PURPOSE OF THE INTRODUCTION IS TO STATE SOME INTERESTING QUESTIONS AND DEFEND THE VALUE OF THESE QUESTIONS. THIS INTRODUCTION SHOULD BE WRITTEN IN A WAY THAT SHOULD GET THE READER EXCITED ABOUT SEEING YOUR RESULTS. THIS SHOULD BE WRITTEN IN NO MORE THAN 4 PARAGRAPHS.
 
 # DATA
@@ -471,6 +475,53 @@ plot(boruta, las = 2, cex.axis = 0.7)
 From the Boruta plot, we can see that WinRate is likely most important, and importantly it will be better for our model to train it on PickRate and BanRate as opposed to PickBanRate. While PickBanRate is still an important variable, we choose to not include it as it overrepresents the value of Picks and Bans in a champions tier, where it could potentially be counted twice as opposed to WinRate, which could only be counted once. Additionally, we see that Patch is least important, but is not unimportant in prediction, which is interesting and suggests that there possibly may be differences between Tier Distributions for patches at some level. 
 
 ```{r}
+leaguedf <- leaguedf %>% select(-c(PickBanRate, HClust, Cluster, Score, Trend)) 
+
+leaguedf$sample <- sample(1:nrow(leaguedf), nrow(leaguedf))
+
+b = nrow(leaguedf)/20
+
+leaguedf <- leaguedf %>%
+  mutate(sample = ceiling(sample/b))
+
+
+crossdf <- data.frame(sample = 1:20, svm_linear = 0, svm_radial = 0, ranger = 0)
+
+
+fitControl <- trainControl(method='CV', 
+                           number = 5, 
+                           verboseIter=F)
+
+#Using a function here makes sure each model stays local and so we end up with a faster training. Consider using this idea elsewhere in the file!!!
+trainandtest <- function (method, traindf, testdf, control) {
+  model <- train(Tier ~ .,
+                 data = traindf,
+                 method = method,
+                 trControl = control)
+  testdf$pred <- predict(model, testdf)
+  
+  return(mean(testdf$Tier == testdf$pred))
+}
+
+for (i in 1:20) {
+  traindf <- leaguedf %>%
+    filter(!(sample == i)) %>%
+    select(-sample)
+  testdf <- leaguedf %>%
+    filter(sample == i) %>%
+    select(-sample)
+  
+  crossdf[i, 2] <- trainandtest("svmLinear", traindf, testdf, fitControl)
+  crossdf[i, 3] <- trainandtest("svmRadial", traindf, testdf, fitControl)
+  crossdf[i, 4] <- trainandtest("ranger", traindf, testdf, fitControl)
+}
+```
+```{r}
+colMeans(crossdf)
+write_csv(crossdf, "crossdf.csv")
+```
+
+```{r}
 #Data Splitting 
 
 ModelFrame <- leaguedf %>%
@@ -508,7 +559,7 @@ rf_fit <- train(Tier ~ .,
              trControl = fitControl, importance="impurity"
 )
 
-saveRDS(rf_fit, "RF_Fit")
+saveRDS(rf_fit, "RF_Fit.rds")
 ```
 
 ```{r, eval = F, warning = F}
@@ -526,7 +577,7 @@ svmlin_fit <- train(Tier ~ .,
                  trControl = fitControl,
                  tuneGrid = grid)
 
-saveRDS(svmlin_fit, "SVMLin_Fit")
+saveRDS(svmlin_fit, "SVMLin_Fit.rds")
 ```
 
 ```{r, eval = F, warning = F}
@@ -544,24 +595,19 @@ svmrad_fit <- train(Tier ~ .,
                  trControl = fitControl,
                  tuneGrid = grid)
 
-saveRDS(svmrad_fit, "SVMRad_Fit")
-```
-
-```{r}
-svmlin_fit$results
-#svmrad_fit$results
-```
-
-```{r}
-pc = leaguedf %>%
-  group_by(Tier) %>%
-  summarize(pc = )
-
+saveRDS(svmrad_fit, "SVMRad_Fit.rds")
 ```
 
 ```{r, echo = F}
-fit <- readRDS("Fit.rds")
-leaguedf$Pred <- predict(fit, ModelFrame)
+rf_fit <- readRDS("RF_Fit.rds")
+svmlin_fit <- readRDS("SVMLin_fit.rds")
+svmrad_fit <- readRDS("SVMrad_fit.rds")
+```
+
+```{r}
+rf_fit$bestTune
+svmlin_fit$bestTune
+svmrad_fit$bestTune
 ```
 
 ```{r, eval=FALSE}
@@ -587,7 +633,7 @@ write.csv(Boundarydf, "BoundaryFrame.csv")
 Boundarydf <- read_csv("BoundaryFrame.csv")
 ```
 
-```{r, fig.width = 10}
+```{r, fig.width = 10, eval = F}
 #Visualization #1 for Ranger Model
 acc_plot <- fit$results %>%  
   mutate(mtry = as.character(mtry), min.node.size = as.character(min.node.size)) %>%
@@ -620,39 +666,52 @@ boundary_plot <- leaguedf %>%
 
 ```{r}
 #Cross validation is expected
-#Assign each row to a number, 1 throuhg 10
-#Test accuracy on each group to see when we are over/under accurate
-leaguedf$sample <- floor(runif(nrow(leaguedf), min = 0, max = 10))
+#K-Fold or LOOCV? Probably K-Fold bc LOOCV Is slow ash.
+leaguedf$sample <- floor(runif(nrow(leagueTest), min = 1, max = 10))
+svmlin_params = svmlin_fit$bestTune[1, ]
+svmrad_params = svmrad_fit$bestTune[1, ]
+rf_params = rf_fit$bestTune[1, ]
 
-leaguedf %>%
-  mutate(correct = Pred == Tier) %>%
-  group_by(sample) %>%
-  summarize(Accuracy = mean(correct), n = n(), sd = sd(correct))
-
+leaguedf <- leaguedf %>%
+  mutate(svmlin_pred = 0, svmrad_pred = 0, ranger_pred = 0)
+for (i in 1:10) {
+  sample <- leaguedf %>%
+    filter(!(sample == i))
+  svmlin_fit <- train(Tier ~ .,
+                      data = sample,
+                      method = "svmLinear")
+  
+  leaguedf <- leaguedf %>%
+    mutate(svmlin_pred = ifelse(sample == i, predict(svmlin_fit, .), svmlin_pred))
+  
+  
+}
 ```
-
-
 
 ```{r}
 ```
 
 ```{r}
 #Special Analysis just for TempChamps
-
-leaguedf  %>%
+#TODO: Fix table format so it isn't disgusting
+leagueTest %>%
   group_by(Name, Role) %>%
   mutate(n = n()) %>%
   ungroup()  %>%
-  mutate(Temp = n < 23, correct = Tier == Pred) %>%
+  mutate(Temp = n < 23, correct = Tier == Pred_svmlin) %>%
   group_by(Temp) %>%
-  summarize(Acc = mean(correct), n = n(), sd = sd(correct))
+  summarize(Acc = mean(correct), n = n(), sd = sd(correct)) %>%
+  kbl() %>%
+  kable_classic()
 
 #Assume that the true probablility is correct. Then, we have H0 as Temp >= NonTemp, and H1 as Temp < NonTemp.
 
 table <- tibble(
-  NonTemporary = 0.797, Temporary = 0.781, NonTemporaryN = 4876, TemporaryN = 761, sdTemporary = 0.402, sdNonTemporary = 0.41325
+  NonTemporary = 0.827, Temporary = 0.766, NonTemporaryN = 4876, TemporaryN = 761, sdTemporary = 0.423, sdNonTemporary = 0.378
 ) %>%
-  mutate(diff  = NonTemporary - Temporary, z = diff/ (sqrt(sdTemporary^2 / TemporaryN + sdNonTemporary^2 / NonTemporaryN)), p = pnorm(q = z, lower.tail = F))
+  mutate(diff  = NonTemporary - Temporary, z = diff/ (sqrt(sdTemporary^2 / TemporaryN + sdNonTemporary^2 / NonTemporaryN)), p = pnorm(q = z, lower.tail = F)) %>%
+  kbl() %>%
+  kable_classic()
 
 
 table
