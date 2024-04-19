@@ -18,6 +18,8 @@ library(kableExtra)
 library(Boruta)
 library(plotly)
 library(randomForest)
+library(formattable)
+library(class)
 ```
 
 ```{r, echo= FALSE}
@@ -465,11 +467,65 @@ This is an attempt for PCA
 PCAdf <- leaguedf %>%
   mutate(Class = paste("Class", Class, sep='_')) %>%
   pivot_wider(
-    names_from = "Name",
-    values_from = "Name",
+    names_from = "Role",
+    values_from = "Role",
     values_fn = function (x) 1,
     values_fill = 0
   ) %>%
+  pivot_wider(
+    names_from = "Class",
+    values_from = "Class",
+    values_fn = function (x) 1,
+    values_fill = 0
+  ) %>%
+  select(-c(Score, Trend, Tier, Cluster, HClust, Patch, Name)) #i'm taking Patch out since it basically messes with the scaling. Patch is uniform, so variance is maximized when patch is maximized
+
+PCA1 <- prcomp(PCAdf, center = T, scale = F)
+
+```
+
+```{r}
+
+eigensum <- function(eigen) {
+  answer <- vector(length = length(eigen)) 
+  sum = 0
+  for (i in 1:length(eigen)) {
+    sum = sum + eigen[i]
+    answer[i] = sum
+  }
+  return(answer)
+}
+eigen <- PCA1$sdev^2
+
+eigFrame <- data.frame(dim = factor(1:length(eigen)), eig = eigen, sum = eigensum(eigen))
+
+
+
+Principles <- PCA1$rotation %>%
+  dimnames
+
+PCACoef <- PCA1$rotation %>%
+  as_tibble() %>%
+  select(c(1,2,3))
+
+eigFrame %>%
+  ggplot() + 
+  geom_bar(mapping = aes(y = eig, x = dim, fill = 'green'), stat = 'identity') + 
+  geom_bar(mapping = aes(y = sum, x = dim, fill = 'blue'), stat = 'identity', alpha = 0.3, ) + 
+  scale_fill_manual(values = c("green" = "green", "blue" = "blue"), labels = c( "Rolling Summation", "Eigenvalue")) + 
+  labs(fill = "Value",x = "Dimension Number", y = "Eigenvalue") + 
+  theme(legend.position = c(0.15, 0.95),
+        legend.justification = "top")
+
+```
+
+Based on the PCA Analysis, we can maybe see that we want 7-9 variables, but we don't know. Please ask!!!!
+
+```{r, fig.height = 10, fig.width = 10}
+Tiers <- unique(leaguedf$Tier)
+
+Stepdf <- leaguedf %>%
+  mutate(Class = paste("Class", Class, sep='_')) %>%
   pivot_wider(
     names_from = "Role",
     values_from = "Role",
@@ -482,34 +538,66 @@ PCAdf <- leaguedf %>%
     values_fn = function (x) 1,
     values_fill = 0
   ) %>%
-  select(-c(Score, Trend, Tier, Cluster, HClust))
+  select(-c(Score, Trend, Patch, Name, HClust, Cluster))
+stepResults <- tibble(Tier = c('0'), results = c(list()), .rows = 0)
+tiers <- unique(leaguedf$Tier)
 
-PCA1 <- prcomp(PCAdf, center = T, scale = F)
+for (tier in tiers) {
+  tempStep <- Stepdf %>%
+    mutate(Tier = Tier == tier)
+  
+  stepModel <- lm(Tier ~ ., data = tempStep)
+    
+  stepModel <- step(stepModel, direction = "both", trace=0)
+    
+  stepResults <- stepResults %>%
+    add_row(Tier = tier, results = list(names(summary(stepModel)$aliased)[-1]))
+}
+plist = vector('list', length = length(tiers))
+counter = 1
+for (tier in tiers) {
+  testVars <- stepResults %>% filter(Tier == tier) %>% select(results)
+  testVars <- testVars$results[[1]]
+  
+  rSquaredFrame <- tibble(features = 1:length(testVars), rSquared = 0)
+  tempStep <- Stepdf %>%
+    mutate(Tier = Tier == tier)
+  varlist <- c()
+  for (var in testVars) {
+    varlist <- append(varlist, var)
+    tempStep2 <- select(tempStep, varlist, Tier)
+    model <- lm(Tier ~ ., data = tempStep2)  
+    
+    rSquaredFrame[length(varlist), 2] = BIC(model)
+  }
+  
+  p1 <- rSquaredFrame %>%
+    ggplot(mapping = aes(x = features, y = rSquared)) + 
+    geom_point(shape = 4, color = "red")  + 
+    geom_line() + 
+    geom_vline(xintercept = 7, color = 'blue') + 
+    labs(x = "Number of Features", y= "BIC") + 
+    theme_minimal()
+  plist[[counter]] <- p1
+  counter = counter + 1
+}
 
+plot <- Reduce('+', plist)
+plot + plot_annotation(title = "BIC Analysis with Bi-Directional Stepwise Regression faceted by Tier", subtitle = "Verticle line at x=7")
 ```
 
-```{r}
-
-eigen <- PCA1$sdev^2
-
-eigFrame <- data.frame(dim = factor(1:length(eigen)), eig = eigen)
-
-Principles <- PCA1$rotation %>%
-  dimnames
-```
-
-Here we choose to do Boruta modeling for feature selection over PCA because PCA requires the variables to be in quantiative form. Because we have a large number of categorical variables with many categories and no inherent ordering (like Name and Role), if we dummy encode our data we would result with around 380 variables, and PCA would have 380! models to fit. This is significantly too large, and even using a Hadamard matrix/Plackett Burmann design of experiments to reduce it to around 380, it still would be too many models. Therefore, we choose a Boruta model, which can naturally deal with high dimensional categorical variables in a uch faster way. A boruta model generates a decision tree in a specific manner and sees how inclusion and emphasis of different variables differently affects the accuracy of a random forest model. Because of this, it is very good at feature selection for Random Forest models, of which the Ranger model which we use is a subset of. Beyond that, it measures importance by gathering Z scores of mean decrease accuracy measure (DAM). 
+We can see that around $7$ feature for each tier is optimal or near optimal, so we want to find 7 variables to use. To do this, we use a Boruta model, which can naturally deal with high dimensional categorical variables in an efficient way for multi-class regressions. A boruta model generates a decision tree in a specific manner and sees how inclusion and emphasis of different variables differently affects the accuracy of a random forest model. Because of this, it is very good at feature selection for Random Forest models, of which the Ranger model which we use is a subset of. Beyond that, it measures importance by gathering Z scores of mean decrease accuracy measure (DAM). 
 
 ```{r, eval = T}
 
 #Feature Selection
 
-boruta <- Boruta(Tier ~ ., data = select(leaguedf, -c(Score, Trend, Cluster, HClust)))
+boruta <- Boruta(Tier ~ ., data = select(leaguedf, -c(Score, Trend, Cluster, HClust, PickBanRate)))
 
 plot(boruta, las = 2, cex.axis = 0.7)
 ```
 
-From the Boruta plot, we can see that WinRate is likely most important, and importantly it will be better for our model to train it on PickRate and BanRate as opposed to PickBanRate. While PickBanRate is still an important variable, we choose to not include it as it overrepresents the value of Picks and Bans in a champions tier, where it could potentially be counted twice as opposed to WinRate, which could only be counted once. Additionally, we see that Patch is least important, but is not unimportant in prediction, which is interesting and suggests that there possibly may be differences between Tier Distributions for patches at some level. 
+We wamt 7 features, and knowing that Role woudl account for 5 in the stepwise regressoin, we can see that WinRate, PickRate, Role, and BanRate are the 4 most likely to be influential variables, and they would make up 8 total features, which is only slightly above what we wanted.
 
 We choose K-Fold over LOOCV for cross validation because 1) K-Fold requires much less computation power and time and this already took 5 hours, and 2) K-Fold can better estimate model accuracy's for machine learning by reducing bias variance, i.e. training on a smaller set will result in less overfitting. K-Fold cross validation functions as: Partition the dataset $S$ into $k$ sets, $S_1, S_2, \ldots, S_k$, loop over $1$ to $k$ with $i$ as the counter, next train each model on the data set $S - S_i$, then test each model on the sample $S_i$ and record the accuracy. When this is finished we compare the mean of each accuracy to best understand the overall standard deviation.
 
@@ -523,7 +611,7 @@ for (colname in colnames(leaguedf)) {
   }
 }
 
-featurecombs <- powerSet(c('WinRate', 'PickRate', 'Role', 'KDA'))# 2^4 = 16 so 16 samples, for 3 models each with 20 runs gives a total of 960 trained models.
+featurecombs <- powerSet(c('WinRate', 'PickRate', 'Role', 'BanRate'))# 2^4 = 16 so 16 samples, for 3 models each with 20 runs gives a total of 960 trained models.
 featurecombs <- featurecombs[-1]
 
 leaguedf <- leaguedf %>% select(-c(PickBanRate, HClust, Cluster, Score, Trend)) 
@@ -540,7 +628,7 @@ leaguedf <- leaguedf %>%
   mutate(sample = ceiling(sample/b))
 
 
-crossdf <- data.frame(sample = rep(1:10, each = 15), svm_linear = 0, svm_radial = 0, ranger = 0, WinRate = 0, PickRate = 0, Role = 0, KDA = 0)
+crossdf <- data.frame(sample = rep(1:10, each = 15), svm_linear = 0, svm_radial = 0, ranger = 0, WinRate = 0, PickRate = 0, Role = 0, BanRate = 0)
 
 
 
@@ -549,7 +637,7 @@ fitControl <- trainControl(method='CV',
                            verboseIter=F)
 ```
 
-```{r}
+```{r, eval = F}
 #Using a function here makes sure each model stays local and so we end up with a faster training. Consider using this idea elsewhere in the file!!!
 trainandtest <- function (method, traindf, testdf, control) {
   if (method == "ranger" & length(colnames(traindf)) < 3) {
@@ -591,14 +679,10 @@ for (feature in featurecombs) {
     crossdf[((i-1) * 15) + featurecount, 5] <- "WinRate" %in% feature
     crossdf[((i-1) * 15) + featurecount, 6] <- "PickRate" %in% feature
     crossdf[((i-1) * 15) + featurecount, 7] <- "Role" %in% feature
-    crossdf[((i-1) * 15) + featurecount, 8] <- "KDA" %in% feature
+    crossdf[((i-1) * 15) + featurecount, 8] <- "BanRate" %in% feature
     }
   featurecount <- featurecount + 1
   } 
-```
-
-```{r}
-crossdf 
 ```
 
 ```{r, echo  = F, message = F}
@@ -609,77 +693,132 @@ crossdf <- read_csv('crossdf.csv')
 write_csv(crossdf, "crossdf.csv")
 ```
 
-```{r}
-crossdf %>%
-  ggplot(mapping = aes(x = sample)) + 
-  geom_line(mapping = aes(y = svm_linear, color = "blue")) + 
-  geom_line(mapping = aes(y = svm_radial, color = "red")) + 
-  geom_line(mapping = aes(y = ranger, color = "green")) + 
-  labs(x = "Sample", y = "Accuracy", title = "Sample Accuracy Plot") + 
-  scale_color_manual(values  = c("blue" = "blue", "red" = "red", "green" = "green"), labels = c("SVM Linear", "SVM Radial", "Ranger"), name = "Model")+ 
-  theme_minimal()
-  
-```
-Radial is clearly not the moves, so we instead seek to compare svm linear with ranger. If ranger is not siginificantly better than linear svm, then we keep SVM. Neither are particularly human readable, but we can look at the coefficients of an SVM model in a better way than looking at a 5000 length random forest tree. If Ranger is signficantly better, we keep Ranger!!!
 
 ```{r}
-colstats <- function (todf, colname, df) {
-  col <- df[[colname]]
-  
-  meancol <- mean(col)
-  sdcol <- sd(col)
-  
-  meancolname <- paste(colname, "Mean", sep = '_')
-  sdcolname <- paste(colname, "SD", sep = '_')
-  
-  todf[[meancolname]] <- meancol
-  todf[[sdcolname]] <- sdcol
-  
-  return (todf)
-}
 
-pvalFrame <- tibble(rows = c(0)) %>%
-  colstats(colname = "svm_linear", crossdf) %>%
-  colstats(colname = "svm_radial", crossdf) %>%
-  colstats(colname = "ranger", crossdf)
-
-pvalFrame %>%
-  transmute(df = 38, 
-            `SVM Linear Mean` = svm_linear_Mean,
-            `SVM Linear SD` = svm_linear_SD,
-            `Ranger Mean` = ranger_Mean,
-            `Ranger SD` = ranger_SD, 
-            `T Statistic` = (ranger_Mean - svm_linear_Mean) / (sqrt((svm_linear_SD^2/20 + ranger_SD^2/20))),
-            `P Value` = pt(`T Statistic`, df = 38, lower.tail = F)) %>%
-  kbl() %>%
-  kable_classic(html_font = "Times New Roman", full_width = T)
-
-```
-This is significant at p=0.05
-
-```{r}
-#Data Splitting 
-
-
-for (colname in colnames(leaguedf)) {
-  
-  if (is.numeric(leaguedf[[colname]])) {
-    leaguedf[[colname]] = c(scale(leaguedf[[colname]]))
+convert_func <- function(WinRate, PickRate, BanRate, Role) {
+  ans <- ''
+  if (WinRate == 1) {
+    ans <- paste(ans, "WinRate", sep = ' ')
   }
+  if (PickRate == 1) {
+    ans <- paste(ans, "PickRate", sep = ' ')
+  }
+  if (BanRate == 1) {
+    ans <- paste(ans, "BanRate", sep = ' ')
+  }
+  if (Role == 1) {
+    ans <- paste(ans, "Role", sep = ' ')
+  }
+  return (ans)
 }
 
+map4 <- function(v1, v2, v3, v4, func) {
+  ans = vector(length = length(v1))
+  for (i in 1:length(v1)) {
+    ans[i] = func(v1[i], v2[i], v3[i], v4[i])
+  }
+  return (ans)
+}
+crossdf <- crossdf %>%
+  pivot_longer(cols = c("svm_linear", "svm_radial", "ranger"), names_to = "Model", values_to = "Accuracy") %>%
+  mutate(Feature = map4(WinRate, PickRate, BanRate, Role, convert_func)) %>%
+  select(sample, Model, Accuracy, Feature) %>%
+  na.omit() %>%
+  group_by(Model, Feature) %>%
+  summarize(sd = sd(Accuracy), Accuracy = mean(Accuracy)) %>%
+  ungroup() %>%
+  mutate(featurenum = str_count(Feature, pattern = ' '))
 
 
-inTrain <- createDataPartition(y=leaguedf$Tier, p=0.75, list=FALSE) 
-
-leagueTrain <- leaguedf[ inTrain, ]
-leagueTest <- leaguedf[ -inTrain, ]
-
+crossdf$Feature <- crossdf$Feature %>%
+  as.factor() 
+crossdf
 ```
 
-```{r, eval = F}
+
+```{r, fig.height = 10, fig.width=10}
+
+#TODO: Fix legends, axis, and axis labels
+#Fix legends by adding colors and making manual labels
+#Fix Axis labels by adding wrap_text to the feature in the top
+#Fix axis by forcing them to all have the same 0 to 1 scale, so that htye look the same
+p1 <- crossdf %>% filter(featurenum == 1) %>%
+  na.omit() %>%
+  ggplot() + 
+  geom_bar(mapping = aes(x = Feature, y = Accuracy, fill = Model), stat = "identity", position = "dodge") + 
+  theme_minimal() + 
+    labs(x = "Features", y = "Accuracy", title = "1 Feature Models") + ylim(0, 1)
+  
+p2 <- crossdf %>% filter(featurenum == 2) %>%
+  na.omit() %>%
+  ggplot() + 
+  geom_bar(mapping = aes(x = Feature, y = Accuracy, fill = Model), stat = "identity", position = "dodge") + 
+  theme_minimal() + 
+    labs(x = "Features", y = "Accuracy", title = "2 Feature Models") + ylim(0,1  )
+
+p3 <- crossdf %>% filter(featurenum == 3) %>%
+  na.omit() %>%
+  ggplot() + 
+  geom_bar(mapping = aes(x = Feature, y = Accuracy, fill = Model), stat = "identity", position = "dodge") + 
+  theme_minimal() + 
+    labs(x = "Features", y = "Accuracy", title = "3 Feature Models") + ylim(0,1 )
+
+p4 <- crossdf %>% filter(featurenum == 4) %>%
+  na.omit() %>%
+  ggplot() + 
+  geom_bar(mapping = aes(x = Feature, y = Accuracy, fill = Model), stat = "identity", position = "dodge") + 
+  theme_minimal() + 
+    labs(x = "Features", y = "Accuracy", title = "4 Feature Models") + ylim(0,1)
+
+(p1 + p2) / (p3 + p4) + plot_layout(guides = "collect")
+```
+Ranger is best slightly with all 4 features, at 75.04% success. We will see if this is different statistically significantly from BanRate/PickRate
+
+```{r}
+bestModels <- crossdf %>% na.omit() %>%
+  group_by(Model) %>%
+  slice_max(Accuracy, n=3) %>%
+  mutate(Model = str_to_title(str_replace(Model, '_', ' ')),
+         `Standard Deviation` = round(sd, digits = 4),
+         WinRate = as.numeric(str_detect(Feature, "WinRate")),
+         PickRate = as.numeric(str_detect(Feature, "PickRate")),
+         BanRate = as.numeric(str_detect(Feature, "BanRate")),
+         Role = as.numeric(str_detect(Feature, "Role")),
+         Accuracy = round(Accuracy, digits = 4)) %>%
+  select(-Feature, -featurenum, -sd) %>%
+  ungroup()
+
+bestModels %>% formattable(
+  list(`WinRate` = formatter("span",
+                        x ~ icontext(ifelse(x > 0, "ok", "remove"), ifelse(x > 0, "Yes", "No")),
+                        style = x ~ style(color = ifelse(x < 1, "red", "green"))),
+       `PickRate` = formatter("span",
+                        x ~ icontext(ifelse(x > 0, "ok", "remove"), ifelse(x > 0, "Yes", "No")),
+                        style = x ~ style(color = ifelse(x < 1, "red", "green"))),
+       `BanRate` = formatter("span",
+                        x ~ icontext(ifelse(x > 0, "ok", "remove"), ifelse(x > 0, "Yes", "No")),
+                        style = x ~ style(color = ifelse(x < 1, "red", "green"))),
+       `Role` = formatter("span",
+                        x ~ icontext(ifelse(x > 0, "ok", "remove"), ifelse(x > 0, "Yes", "No")),
+                        style = x ~ style(color = ifelse(x < 1, "red", "green"))),
+       `Accuracy` = formatter("span", x ~ percent(x)))
+)
+
+
+```
+SVM Models are more human readable than a random forest with 5k trees, so we give preference to them.
+```{r}
+bestModels %>% slice_max(Accuracy, n=6) %>%
+  mutate(meanDiff = max(Accuracy) - Accuracy, z = meanDiff/(sqrt(`Standard Deviation`^2/10 + 0.0161^2/10)), pval = round(pnorm(q=z, lower.tail=F), 4))
+
+```
+Hence, our Ranger model is NOT better that our Radial SVM model with all features within a p=0.05, however, all other models are. This is happy! Because we have projected our data set down by a lot and reduced the amount of variables we need and whatnot. WE can better visualize this now using 
+
+
+```{r, eval = F, echo = F}
 #Model Fitting
-#Current best model
+#Deprecated wont work!
 grid <- expand.grid(mtry = c(6,9,12), splitrule=c("extratrees", "gini"), min.node.size=c(1,3,6,10))
 
 fitControl <- trainControl(method='CV', 
@@ -697,7 +836,7 @@ rf_fit <- train(Tier ~ .,
 saveRDS(rf_fit, "RF_Fit.rds")
 ```
 
-```{r, eval = F, warning = F}
+```{r, eval = F, warning = F, echo = F}
 
 grid <- expand.grid(C = seq(0, 10, length = 20))
 
@@ -716,28 +855,154 @@ saveRDS(svmlin_fit, "SVMLin_Fit.rds")
 ```
 
 ```{r, eval = F, warning = F}
+#Hypertuning parameters
+#Algorithm is a greedy alg i came up with that goes as follows:
+#1. Test with parameters, find the best fit, if it worst than the last then we are done, save the model
+#2. Otherwise, we are not done. Take C and Sigma for the best fit of the last set of params, create an interval around them of [C - delta, C + delta], where both Delta are the distance (Cmax - Cmin)/5, and the same for Sigma
+#3. If the new C interval < 0.1 in length, we are done because we have gone far enoguh. Save the model
+#4. Repeat until complete.
 
-grid <- expand.grid(C = seq(4, 5, length = 5), sigma = seq(0.20, 0.3, length = 5))
+#NOTE THAT THERE MAY BE A BUG WHERE IF WE OVERTRAIN THE MODEL (last was better than all current) WE DON'T GET THE ORIGINAL MODEL BACK!!!! POSSIBLY WANT TO FIX THIS BBG <3 But could always analyze and see cmax - cmin /2 for last C value
+#Also likely has a memory leak since none of the models are locally defined. 
 
+#improvement idea to fix both issues : Define train function that returns either previous best C and best sigma OR new best C and best sigma? Locally defined since function and if we can keep best C and sigma we can train a model on those specifically!
+
+grid <- expand.grid(C = seq(0, 5, length = 5), sigma = seq(0, 1, length = 5))
+
+cmin = 0
+cmax = 5
+sigmamin = 0
+sigmamax = 0.3
+done = F
+last_acc = 0
 
 fitControl <- trainControl(method='CV', 
-                           number = 3, 
+                           number = 5, 
                            verboseIter=F)
-
+while (done == F) {
+  svmrad_fit <- train(Tier ~ .,
+                   data = select(leaguedf, c(WinRate, PickRate, BanRate, Role, Tier)),
+                   method="svmRadial",
+                   trControl = fitControl,
+                   tuneGrid = grid)
+  best_fit <- svmrad_fit$results %>%
+    slice_max(Accuracy, n=1) 
+  
+  if (last_acc > best_fit$Accuracy[1]) {
+    done = T
+  }
+  else {
+    if (best_fit$C[1] == cmax) {
+      cmin = cmin + cmax
+      cmax = cmax + cmax
+    }
+    if (best_fit$sigma[1] == sigmamax) {
+      sigmamin = sigmamin + sigmamax
+      sigmamax = sigmamax + sigmamax
+    }
+    else {
+      cmin <- svmrad_fit$results %>%
+        filter(C < best_fit$C[1]) %>%
+        slice_max(C, n = 1)
+      cmin <- cmin$C[1]
+      cmax <- svmrad_fit$results %>%
+        filter(C > best_fit$C[1]) %>%
+        slice_min(C, n = 1)
+      cmax <- cmax$C[1]
+      
+      sigmamin = svmrad_fit$results %>%
+        filter(sigma < best_fit$sigma[1]) %>%
+        slice_max(sigma, n = 1)
+      sigmamin = sigmamin$sigma[1]
+      
+      sigmamax = svmrad_fit$results %>%
+        filter(sigma > best_fit$sigma[1]) %>%
+        slice_min(sigma, n =1)
+      sigmamax = sigmamax$sigma[1]
+      
+      if (cmin - cmax < 0.01) {
+        done = T
+      }
+      grid <- expand.grid(C = seq(cmin, cmax, length = 5), sigma = seq(sigmamin, sigmamax, length = 5))
+      last_acc <- best_fit$accuracy
+    }
+    }
+}
 svmrad_fit <- train(Tier ~ .,
-                 data = leagueTrain,
-                 method="svmRadial",
-                 trControl = fitControl,
-                 tuneGrid = grid)
-
+                    data  = select(leaguedf, c(WinRate, PickRate, BanRate, Role, Tier)),
+                    method= "svmRadial",
+                    trControl = fitControl,
+                    tuneGrid = grid)
 saveRDS(svmrad_fit, "SVMRad_Fit.rds")
 ```
 
 ```{r, echo = F}
-rf_fit <- readRDS("RF_Fit.rds")
+#rf_fit <- readRDS("RF_Fit.rds")
 #svmlin_fit <- readRDS("SVMLin_fit.rds")
-#svmrad_fit <- readRDS("SVMrad_fit.rds")
+svmrad_fit <- readRDS("SVMrad_fit.rds")
 ```
+
+```{r}
+svmrad_fit$results$C[1]
+
+```
+
+```{r}
+#Special Analysis just for TempChamps
+#TODO: Fix table format so it isn't disgusting
+leaguedf$Pred_svmrad = predict(svmrad_fit, leaguedf)
+leaguedf %>%
+  group_by(Name, Role) %>%
+  mutate(n = n()) %>%
+  ungroup()  %>%
+  mutate(Temp = n < 23, correct = Tier == Pred_svmrad) %>%
+  group_by(Temp) %>%
+  summarize(Acc = mean(correct), n = n(), sd = sd(correct)) %>%
+  kbl() %>%
+  kable_classic()
+
+#Assume that the true probablility is correct. Then, we have H0 as Temp >= NonTemp, and H1 as Temp < NonTemp.
+
+table <- tibble(
+  NonTemporary = 0.789, Temporary = 0.726, NonTemporaryN = 4876, TemporaryN = 761, sdTemporary = 0.407, sdNonTemporary = 0.344
+) %>%
+  mutate(diff  = NonTemporary - Temporary, z = diff/ (sqrt(sdTemporary^2 / TemporaryN + sdNonTemporary^2 / NonTemporaryN)), p = pnorm(q = z, lower.tail = F)) %>%
+  kbl() %>%
+  kable_classic()
+
+
+table
+```
+
+# CONCLUSION
+IN LESS THAN 4 PARAGRAPHS, YOU SHOULD RESTATE YOUR QUESTIONS ALONG WITH YOUR CONCLUSIONS. THE PURPOSE OF THIS SECTION IS TO SUMMARIZE YOUR FINDINGS (SHORT), DEFEND THE IMPORTANCE OF YOUR RESULTS IN THE REAL WORLD (LONG), AND PROVIDE A ROADMAP FOR OTHERS TO CONTINUE THIS WORK (LONG). ARE YOUR CONCLUSIONS WHAT YOU EXPECTED OR UNUSUAL? WHY SHOULD SOMEONE CARE ABOUT THESE RESULTS? HOW COULD THESE RESULTS BE USED IN THE REAL WORLD? YOU SHOULD PROVIDE IDEAS ABOUT FUTURE DIRECTIONS ON WHERE YOUR MODELING COULD POSSIBLY BE IMPROVED. ARE THERE ANY METHODS YOU DIDN'T USE THAT MAY WORK BETTER? IS THERE DATA YOU DIDN'T HAVE ACCESS TO THAT MAY BE USEFUL IN THIS DATA ANALYSIS? 
+
+
+
+```{r}
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ```{r, eval=FALSE}
 Mode <- function(x) {
@@ -801,43 +1066,4 @@ boundary_plot <- leaguedf %>%
   
 (acc_plot + cm_plot) /boundary_plot
 ```
-
-
-```{r}
-#Special Analysis just for TempChamps
-#TODO: Fix table format so it isn't disgusting
-leagueTest %>%
-  group_by(Name, Role) %>%
-  mutate(n = n()) %>%
-  ungroup()  %>%
-  mutate(Temp = n < 23, correct = Tier == Pred_svmlin) %>%
-  group_by(Temp) %>%
-  summarize(Acc = mean(correct), n = n(), sd = sd(correct)) %>%
-  kbl() %>%
-  kable_classic()
-
-#Assume that the true probablility is correct. Then, we have H0 as Temp >= NonTemp, and H1 as Temp < NonTemp.
-
-table <- tibble(
-  NonTemporary = 0.827, Temporary = 0.766, NonTemporaryN = 4876, TemporaryN = 761, sdTemporary = 0.423, sdNonTemporary = 0.378
-) %>%
-  mutate(diff  = NonTemporary - Temporary, z = diff/ (sqrt(sdTemporary^2 / TemporaryN + sdNonTemporary^2 / NonTemporaryN)), p = pnorm(q = z, df = TemporaryN + NonTemporaryN - 2, lower.tail = F)) %>%
-  kbl() %>%
-  kable_classic()
-
-
-table
-```
-
-# CONCLUSION
-IN LESS THAN 4 PARAGRAPHS, YOU SHOULD RESTATE YOUR QUESTIONS ALONG WITH YOUR CONCLUSIONS. THE PURPOSE OF THIS SECTION IS TO SUMMARIZE YOUR FINDINGS (SHORT), DEFEND THE IMPORTANCE OF YOUR RESULTS IN THE REAL WORLD (LONG), AND PROVIDE A ROADMAP FOR OTHERS TO CONTINUE THIS WORK (LONG). ARE YOUR CONCLUSIONS WHAT YOU EXPECTED OR UNUSUAL? WHY SHOULD SOMEONE CARE ABOUT THESE RESULTS? HOW COULD THESE RESULTS BE USED IN THE REAL WORLD? YOU SHOULD PROVIDE IDEAS ABOUT FUTURE DIRECTIONS ON WHERE YOUR MODELING COULD POSSIBLY BE IMPROVED. ARE THERE ANY METHODS YOU DIDN'T USE THAT MAY WORK BETTER? IS THERE DATA YOU DIDN'T HAVE ACCESS TO THAT MAY BE USEFUL IN THIS DATA ANALYSIS? 
-
-
-
-```{r}
-
-
-```
-
-
 
