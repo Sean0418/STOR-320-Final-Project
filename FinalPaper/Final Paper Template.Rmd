@@ -1,6 +1,6 @@
 ---
 title: "Final Paper"
-author: "STOR 320.(01 OR 02) Group PLACE_GROUP_NUMBER_HERE (Ex: STOR 320.01 Group 12)"
+author: "STOR 320.01 Group 13"
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 output: 
   html_document:
@@ -20,6 +20,12 @@ library(plotly)
 library(randomForest)
 library(formattable)
 library(class)
+library(rgl)
+library(misc3d)
+
+options(rgl.useNULL = TRUE)
+rgl::setupKnitr()
+
 ```
 
 ```{r, echo= FALSE}
@@ -518,8 +524,8 @@ eigFrame %>%
         legend.justification = "top")
 
 ```
-
 Based on the PCA Analysis, we can maybe see that we want 7-9 variables, but we don't know. Please ask!!!!
+
 
 ```{r, fig.height = 10, fig.width = 10}
 Tiers <- unique(leaguedf$Tier)
@@ -604,12 +610,6 @@ We choose K-Fold over LOOCV for cross validation because 1) K-Fold requires much
 ```{r}
 
 
-for (colname in colnames(leaguedf)) {
-  
-  if (is.numeric(leaguedf[[colname]])) {
-    leaguedf[[colname]] = c(scale(leaguedf[[colname]]))
-  }
-}
 
 featurecombs <- powerSet(c('WinRate', 'PickRate', 'Role', 'BanRate'))# 2^4 = 16 so 16 samples, for 3 models each with 20 runs gives a total of 960 trained models.
 featurecombs <- featurecombs[-1]
@@ -887,45 +887,51 @@ while (done == F) {
                    tuneGrid = grid)
   best_fit <- svmrad_fit$results %>%
     slice_max(Accuracy, n=1) 
+  print(best_fit)
+  
   
   if (last_acc > best_fit$Accuracy[1]) {
+    print("Best fit Higher then last Accuracy")
     done = T
   }
   else {
     if (best_fit$C[1] == cmax) {
       cmin = cmin + cmax
-      cmax = cmax + cmax
+      cmax = cmax * 2
     }
     if (best_fit$sigma[1] == sigmamax) {
       sigmamin = sigmamin + sigmamax
-      sigmamax = sigmamax + sigmamax
+      sigmamax = sigmamax *2
     }
     else {
       cmin <- svmrad_fit$results %>%
-        filter(C < best_fit$C[1]) %>%
+        filter(C < best_fit$C) %>%
         slice_max(C, n = 1)
       cmin <- cmin$C[1]
+      
       cmax <- svmrad_fit$results %>%
-        filter(C > best_fit$C[1]) %>%
+        filter(C > best_fit$C) %>%
         slice_min(C, n = 1)
       cmax <- cmax$C[1]
       
       sigmamin = svmrad_fit$results %>%
-        filter(sigma < best_fit$sigma[1]) %>%
+        filter(sigma < best_fit$sigma) %>%
         slice_max(sigma, n = 1)
       sigmamin = sigmamin$sigma[1]
       
       sigmamax = svmrad_fit$results %>%
-        filter(sigma > best_fit$sigma[1]) %>%
+        filter(sigma > best_fit$sigma) %>%
         slice_min(sigma, n =1)
       sigmamax = sigmamax$sigma[1]
       
-      if (cmin - cmax < 0.01) {
-        done = T
-      }
+      if (abs(cmin - cmax) < 0.01) {
+        print("Within 0.01")
+        print(abs(cmin - cmax))
+        done = T      }
       grid <- expand.grid(C = seq(cmin, cmax, length = 5), sigma = seq(sigmamin, sigmamax, length = 5))
-      last_acc <- best_fit$accuracy
-    }
+      last_acc <- best_fit$Accuracy[1]
+      print(paste("New cmin is: ", cmin, "New cmax is:", cmax,  sep = ' '))
+      }
     }
 }
 svmrad_fit <- train(Tier ~ .,
@@ -943,7 +949,55 @@ svmrad_fit <- readRDS("SVMrad_fit.rds")
 ```
 
 ```{r}
-svmrad_fit$results$C[1]
+PlottingData <- leaguedf %>%
+  filter(Role == "Top") %>%
+  select(c(WinRate, PickRate, BanRate, Role, Tier)) %>%
+  mutate(Tier = fct_recode(Tier, 
+    '1' = 'D',
+    '2' = 'C',
+    '3' = 'B',
+    '4' = 'A',
+    '5' = 'S',
+    '6' = 'God'
+  )) %>%
+  mutate(Tier = as.numeric(as.character(Tier)))
+
+contour.list = lapply(PlottingData[,-c(4,5)], function(x) seq(min(x), max(x), len=50))
+contour = expand.grid(contour.list) %>%
+  mutate(Role = "Top")
+contour.pred = predict(svmrad_fit, newdata = contour, decision.values = T)
+```
+
+```{r, fig.height = 10, fig.width = 15}
+
+
+contour.df = fct_recode(contour.pred, 
+    '1' = 'D',
+    '2' = 'C',
+    '3' = 'B',
+    '4' = 'A',
+    '5' = 'S',
+    '6' = 'God'
+  )
+
+
+contour.df = as.numeric(as.character(contour.df))
+contour.df = array(contour.df, dim = rep(50, 3))
+plots <- NULL
+for (i in 1:6) {
+  open3d()
+  plot3d(PlottingData[-4], col= PlottingData$Tier)
+  surface = computeContour3d(vol = contour.df, maxvol = max(contour.df), level = i, contour.list$WinRate, contour.list$PickRate, contour.list$BanRate) #LEVEL CONTROLS WHAT TIER WE WANT TO VIEW
+  triangles3d(x = surface[,1], y = surface[,2], z = surface[,3], color = i)
+  plots <- htmltools::tagList(plots, rglwidget())
+  close3d()
+}
+mfrow3d(2,3)
+plots
+
+```
+
+```{r}
 
 ```
 
@@ -951,26 +1005,26 @@ svmrad_fit$results$C[1]
 #Special Analysis just for TempChamps
 #TODO: Fix table format so it isn't disgusting
 leaguedf$Pred_svmrad = predict(svmrad_fit, leaguedf)
-leaguedf %>%
+pretable <- leaguedf %>%
   group_by(Name, Role) %>%
   mutate(n = n()) %>%
   ungroup()  %>%
   mutate(Temp = n < 23, correct = Tier == Pred_svmrad) %>%
   group_by(Temp) %>%
-  summarize(Acc = mean(correct), n = n(), sd = sd(correct)) %>%
-  kbl() %>%
-  kable_classic()
+  summarize(Acc = mean(correct), n = n(), sd = sd(correct))
 
 #Assume that the true probablility is correct. Then, we have H0 as Temp >= NonTemp, and H1 as Temp < NonTemp.
 
 table <- tibble(
-  NonTemporary = 0.789, Temporary = 0.726, NonTemporaryN = 4876, TemporaryN = 761, sdTemporary = 0.407, sdNonTemporary = 0.344
+  NonTemporary = pretable[[1,2]], Temporary = pretable[[2,2]], NonTemporaryN = 4876, TemporaryN = 761, sdTemporary = pretable[[1,4]], sdNonTemporary = pretable[[2,4]]
 ) %>%
   mutate(diff  = NonTemporary - Temporary, z = diff/ (sqrt(sdTemporary^2 / TemporaryN + sdNonTemporary^2 / NonTemporaryN)), p = pnorm(q = z, lower.tail = F)) %>%
   kbl() %>%
   kable_classic()
 
-
+pretable %>%
+  kbl() %>%
+  kable_classic
 table
 ```
 
