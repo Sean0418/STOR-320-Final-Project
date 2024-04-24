@@ -1,0 +1,224 @@
+---
+title: "Decision Boundary Contour Plot"
+author: ""
+date: ""
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: scroll
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(27) #DO NOT CHANGE THIS SEED IT IS NEEDED FOR REPRODUCABILITY SO OUR DATA WILL MAKE SENSE WITH THE WORDS WE USE PLEASE DONT CHANGE KEEP AT 27 PLEASE GOD KEEP AT 27
+library(tidyverse)
+library(patchwork)
+library(rje)
+library(caret)
+library(kableExtra)
+library(Boruta)
+library(plotly)
+library(randomForest)
+library(formattable)
+library(class)
+library(rgl)
+library(misc3d)
+library(htmlwidgets)
+library(htmltools)
+library(flexdashboard)
+options(rgl.useNULL = TRUE)
+```
+
+
+```{r, echo = F}
+
+leaguedf <- read_csv('../data_sets/S13LeagueOfLegendsData.csv', 
+                      col_types=c('c', 'c', 'c', 'c', 'c', 'd', 'd', 'd', 'd', 'd', 'd', 'd', 'c'), 
+                      col_names=c('rowno', 'Name', 'Class', 'Role', 'Tier', 'Score', 'Trend', "WinRate", "RoleRate", "PickRate", "BanRate", 'KDA', 'Patch'), skip=1) %>%
+  column_to_rownames("rowno") %>% 
+  mutate(PickBanRate = PickRate + BanRate, 
+         Patch = as.numeric(str_replace(Patch, '(.*?)_(.*?)', '')), 
+         Role = str_to_title(Role))
+leaguedf$Tier = as.factor(leaguedf$Tier) %>%
+  fct_relevel(c("God", "S", "A", "B", "C", "D"))
+
+```
+
+
+```{r, echo = F}
+#rf_fit <- readRDS("RF_Fit.rds")
+#svmlin_fit <- readRDS("SVMLin_fit.rds")
+svmrad_fit <- readRDS("SVMrad_fit.rds")
+```
+
+```{r, echo  = F}
+
+MakeIsoSurface <- function(PlottingData, role) {
+      
+  #Prepariing Data
+  
+  
+  #Create contour isosurface
+  contour.list = lapply(PlottingData[,-c(4,5)], function(x) seq(min(x), max(x), len=50))
+  contour = expand.grid(contour.list) %>%
+    mutate(Role = role)
+  contour.pred = predict(svmrad_fit, newdata = contour, decision.values = T)
+  contour.df = fct_recode(contour.pred, 
+    '1' = 'D',
+    '2' = 'C',
+    '3' = 'B',
+    '4' = 'A',
+    '5' = 'S',
+    '6' = 'God'
+  )
+
+  
+  contour.df = as.numeric(as.character(contour.df))
+  contour.df = array(contour.df, dim = rep(50, 3))
+
+  return (list(contour.list, contour.df))
+}
+MakeContourPlot <- function(contour.df, contour.list, PlottingData, role) {
+
+  mfrow3d(2,3)
+  for (i in 1:6) {
+    #Create the actual isosurface from data
+    surface = computeContour3d(
+      vol = contour.df,
+      maxvol = max(contour.df), 
+      level = i,
+      contour.list$WinRate,
+      contour.list$PickRate,
+      contour.list$BanRate) #LEVEL CONTROLS WHAT TIER WE WANT TO VIEW
+    
+    next3d()
+    #Plot surface overlayed with datapoints
+    plot3d(PlottingData[-c(4,5)], col= PlottingData$Tier, tag = role)
+    triangles3d(x = surface[,1], y = surface[,2], z = surface[,3], color = i, tag = role) 
+    title3d(main = as.character(tiers[i]), tag = role)
+  }
+  return (rglwidget())
+}
+
+```
+
+
+```{r, include = F}
+
+tiers = c("D", "C", "B", "A", "S", "God")
+roles = c("Top","Jungle", "Mid", "Adc", "Support")
+
+PlottingData <- leaguedf %>%
+    select(c(WinRate, PickRate, BanRate, Role, Tier)) %>%
+    mutate(Tier = fct_recode(Tier, 
+      '1' = 'D',
+      '2' = 'C',
+      '3' = 'B',
+      '4' = 'A',
+      '5' = 'S',
+      '6' = 'God'
+    )) %>%
+    mutate(Tier = as.numeric(as.character(Tier)))
+
+
+open3d()
+#TOP
+Plotting <- PlottingData %>%
+  filter(Role == "Top")
+
+subtop <- subsceneInfo()$id
+dataList <- MakeIsoSurface(Plotting, "Top")
+contour.list <- dataList[1][[1]]
+contour.df <- dataList[2][[1]]
+
+#Make one surface for each plot and save.
+
+Topplot <-MakeContourPlot(contour.df, contour.list, Plotting, "Top")
+
+#Now take each surface and generate a plot, the same way a loop would, but save it to a unique variable
+
+
+#Repeat the steps every single time.
+#MID
+Plotting <- PlottingData %>%
+  filter(Role == "Mid")
+
+submid <- subsceneInfo()$id
+dataList <- MakeIsoSurface(Plotting, "Mid")
+contour.list <- dataList[1][[1]]
+contour.df <- dataList[2][[1]]
+
+Midplot <- MakeContourPlot(contour.df, contour.list, Plotting, "Mid")
+
+#ADC
+
+Plotting <- PlottingData %>%
+  filter(Role == "Adc")
+
+subadc <- subsceneInfo()$id
+dataList <- MakeIsoSurface(Plotting, "Adc")
+contour.list <- dataList[1][[1]]
+contour.df <- dataList[2][[1]]
+
+Adcplot <- MakeContourPlot(contour.df, contour.list, Plotting, "Adc")
+
+#SUPPORT
+
+Plotting <- PlottingData %>%
+  filter(Role == "Support")
+
+subsupport <- subsceneInfo()$id
+dataList <- MakeIsoSurface(Plotting, "Support")
+contour.list <- dataList[1][[1]]
+contour.df <- dataList[2][[1]]
+
+Supportplot <- MakeContourPlot(contour.df, contour.list, Plotting, "Support")
+
+
+#JUNGLE
+Plotting <- PlottingData %>%
+  filter(Role == "Jungle")
+
+subjungle <- subsceneInfo()$id
+dataList <- MakeIsoSurface(Plotting, "Jungle")
+contour.list <- dataList[1][[1]]
+contour.df <- dataList[2][[1]]
+
+Jungleplot <- MakeContourPlot(contour.df, contour.list, Plotting, "Jungle")
+
+close3d()
+```
+
+Row {data-height=600, .tabset}
+-------------------------------------------------------------------------
+
+### Top
+
+```{r, echo = F}
+Topplot 
+```
+
+### Jungle
+
+```{r, echo = F}
+Jungleplot
+```
+
+### Mid
+
+```{r, echo = F}
+Midplot
+```
+
+### ADC
+
+```{r,  echo =F}
+Adcplot
+```
+
+### Support
+
+```{r,  echo = F}
+Supportplot
+```

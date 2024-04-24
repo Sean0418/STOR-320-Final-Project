@@ -3,8 +3,7 @@ title: "Final Paper"
 author: "STOR 320.01 Group 13"
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 output: 
-  html_document:
-    css: style.css
+  html_document
 ---
 
 ```{r setup, include=FALSE}
@@ -22,10 +21,11 @@ library(formattable)
 library(class)
 library(rgl)
 library(misc3d)
-
+library(htmlwidgets)
+library(htmltools)
+library(knitr)
 options(rgl.useNULL = TRUE)
-rgl::setupKnitr()
-
+knitr::opts_chunk$set(fig.align = "center")
 ```
 
 ```{r, echo= FALSE}
@@ -84,7 +84,6 @@ annotations = list(
 
 # INTRODUCTION
 
-
 ```{r}
 
 leaguedf <- read_csv('../data_sets/S13LeagueOfLegendsData.csv', 
@@ -98,13 +97,14 @@ leaguedf$Tier = as.factor(leaguedf$Tier) %>%
   fct_relevel(c("God", "S", "A", "B", "C", "D"))
 
 head(leaguedf, 5)
-
 ```
 AFTER WORKING WITH THE DATA AND DISCUSSING THE INFORMATION WITH YOUR GROUP, YOU SHOULD DESCRIBE 2 QUESTIONS THAT ARE CREATIVE AND INNOVATIVE. YOU SHOULD EXPLAIN WHY THESE QUESTIONS ARE INTERESTING AND WHY THEY DESERVE FURTHER INVESTIGATION. I ADVISE TO THINK OF REASONS WHY AN OWNER OF THE DATA MIGHT BENEFIT FROM ANSWERS TO THESE QUESTIONS. THINK OF REASONS WHY THE WORLD MAY BE INTERESTED IN THESE QUESITONS. THE PURPOSE OF THE INTRODUCTION IS TO STATE SOME INTERESTING QUESTIONS AND DEFEND THE VALUE OF THESE QUESTIONS. THIS INTRODUCTION SHOULD BE WRITTEN IN A WAY THAT SHOULD GET THE READER EXCITED ABOUT SEEING YOUR RESULTS. THIS SHOULD BE WRITTEN IN NO MORE THAN 4 PARAGRAPHS.
 
 # DATA
 
-```{r, message = F}
+
+
+```{r, message = F, warning = F}
 tempchamps <- leaguedf %>%
   complete(nesting(Name, Role), Patch) %>% # This explicitly finds champions who were only played in a role significantly for less than all of the patches!
   filter(!complete.cases(.)) %>%
@@ -115,6 +115,7 @@ tempdf <- leaguedf %>%
   group_by(Name, Role) %>%
   summarize(
     n = n(),
+    invN = 1/n(),
     meanWinRate = mean(WinRate),
     sdWinRate = sd(WinRate),
     meanPickBan = mean(PickBanRate),
@@ -123,15 +124,20 @@ tempdf <- leaguedf %>%
   ) %>%
   filter(n != 23)
 
-tempdf %>%
-  mutate(meanWinRate = meanWinRate * 100, meanPickBan = meanPickBan * 100) %>%
-  ggplot(aes(x = meanWinRate, y = meanPickBan)) + geom_point(mapping = aes(size = 1/n)) +
-  geom_text(aes(label = label, color = Role), size = 3, nudge_x = 0.5, check_overlap = T) + #Consider removing? Is it too much stuff?
-  geom_vline(xintercept = 50, color = 'red') + 
+p1 <- tempdf %>%
+  ggplot() + geom_point(mapping = aes(x = meanWinRate, y = meanPickBan, alpha = invN), stroke = 0) +
+  geom_vline(xintercept = .50, color = 'red') + 
   coord_trans(x = 'log10', y = 'log10') + 
-  labs(x = "Win Rate Average", y = "Pick Ban Rate Average", title = "Win Rate vs Pick Ban Rate for Temporary champions", subtitle = "Size is invertly proportional to number of patches present") + 
-  theme_minimal()
+  labs(x = "Win Rate Average", y = "Pick Ban Rate Average", title = "Win Rate vs Pick Ban Rate for Temporary champions") + 
+  theme(legend.position = "none")
+p2 <- tempdf %>% select(Name, Role, n) %>% distinct(Name, Role, n) %>%
+  ggplot() + 
+  geom_histogram(mapping = aes(x = n)) + 
+  labs(x = "Patches Present", y = "Count", title = "Distribution of Temporary Champions")
+p1 + p2
 ```
+
+
 
 ```{r, message = F, warning = F}
 leaguedf %>%
@@ -218,6 +224,8 @@ PbrCorrelation %>% filter(Champion2 %in% c("Tahm Kench Support", "Senna Support"
   geom_text(aes(label = label), na.rm = TRUE, hjust = -0.1, size = 3, check_overlap = T) 
 ```
 
+
+
 ```{r}
 leaguedf %>% 
   group_by(Name) %>% 
@@ -228,6 +236,8 @@ leaguedf %>%
   geom_smooth(aes(x = Mean_pick, y = Std_win), method = 'lm', se = F) # THIS LOOKS NON LINEAR BUT IT IS LINEAR, ITS JUST ON A LOG SCALE!!!!
 
 ```
+
+
 
 ```{r, fig.height = 15}
 plot1 <- leaguedf %>%
@@ -255,6 +265,10 @@ TierPalette <- c("#A2B5CF", "#E7DD49", "#8FB0C5", "#F7CAC9", "#C2E0CB", "#D7BDE2
 
 
 ```
+
+## Clustering Analysis
+
+
 
 ```{r, fig.height = 10, fig.width = 10}
 #Cluster Analysis with K-Means
@@ -387,12 +401,15 @@ Meta_Tiers <- wrap_elements(plot1a + plot1b + plot1c + guide_area() +
   theme(plot.title = element_text(hjust = 0.5, size = 15, face = 'bold')) 
 ```
 
+
+
 ```{r, fig.height = 10, fig.width = 10}
 #Hierarchical Clustering
 HCluster <- hclust(dist(Normaldf))
 
 plot(HCluster, xlab = '', sub = '', cex = .9) #Dendrogram!!!
 ```
+
 
 ```{r, fig.height = 10, fig.width = 10}
 
@@ -427,6 +444,7 @@ plot1c <- leaguedf %>%
   plot_annotation(title = "Hierarchical Cluster Analysis")  & theme(plot.title = element_text(hjust = 0.5, size = 15, face = 'bold'))
 ```
 
+
 ```{r}
 leaguedf %>%
   rename(`Hierarchical Cluster` = HClust) %>%
@@ -448,7 +466,7 @@ leaguedf %>%
   - 4: highly picked champs
   - 5: Yuumi <3
 
-```{r, message = F}
+```{r, message = F, echo = F, eval = F}
 Propdf <- leaguedf %>%
   group_by(Tier, Cluster) %>%
   summarize(count = n()) %>%
@@ -465,9 +483,7 @@ heatplot <- Propdf %>%
 heatplot & plot_annotation(title = "Similarity Heatmap", subtitle="This should feel close to a confusion matrix")
 ```
 
-Part 2: Classification Exploration
-
-This is an attempt for PCA
+## Part 2: Classification Exploration
 
 ```{r}
 PCAdf <- leaguedf %>%
@@ -524,8 +540,8 @@ eigFrame %>%
         legend.justification = "top")
 
 ```
-Based on the PCA Analysis, we can maybe see that we want 7-9 variables, but we don't know. Please ask!!!!
 
+Based on the PCA Analysis, we can maybe see that we want 7-9 variables, but we don't know. Please ask!!!!
 
 ```{r, fig.height = 10, fig.width = 10}
 Tiers <- unique(leaguedf$Tier)
@@ -594,6 +610,7 @@ plot + plot_annotation(title = "BIC Analysis with Bi-Directional Stepwise Regres
 
 We can see that around $7$ feature for each tier is optimal or near optimal, so we want to find 7 variables to use. To do this, we use a Boruta model, which can naturally deal with high dimensional categorical variables in an efficient way for multi-class regressions. A boruta model generates a decision tree in a specific manner and sees how inclusion and emphasis of different variables differently affects the accuracy of a random forest model. Because of this, it is very good at feature selection for Random Forest models, of which the Ranger model which we use is a subset of. Beyond that, it measures importance by gathering Z scores of mean decrease accuracy measure (DAM). 
 
+
 ```{r, eval = T}
 
 #Feature Selection
@@ -602,6 +619,8 @@ boruta <- Boruta(Tier ~ ., data = select(leaguedf, -c(Score, Trend, Cluster, HCl
 
 plot(boruta, las = 2, cex.axis = 0.7)
 ```
+
+
 
 We wamt 7 features, and knowing that Role woudl account for 5 in the stepwise regressoin, we can see that WinRate, PickRate, Role, and BanRate are the 4 most likely to be influential variables, and they would make up 8 total features, which is only slightly above what we wanted.
 
@@ -659,7 +678,7 @@ trainandtest <- function (method, traindf, testdf, control) {
 }
 
 featurecount <- 1
-# Something is wronge here:
+# Something is wrong here:
 # MTRY For Ranger is auto failing with 1 feature. How do I set mtry low?
 for (feature in featurecombs) {
   for (i in 1:10) {
@@ -693,8 +712,7 @@ crossdf <- read_csv('crossdf.csv')
 write_csv(crossdf, "crossdf.csv")
 ```
 
-
-```{r}
+```{r, echo = F}
 
 convert_func <- function(WinRate, PickRate, BanRate, Role) {
   ans <- ''
@@ -733,7 +751,6 @@ crossdf <- crossdf %>%
 
 crossdf$Feature <- crossdf$Feature %>%
   as.factor() 
-crossdf
 ```
 
 
@@ -773,7 +790,10 @@ p4 <- crossdf %>% filter(featurenum == 4) %>%
 
 (p1 + p2) / (p3 + p4) + plot_layout(guides = "collect")
 ```
+
 Ranger is best slightly with all 4 features, at 75.04% success. We will see if this is different statistically significantly from BanRate/PickRate
+
+### Top Accuracy Comparison
 
 ```{r}
 bestModels <- crossdf %>% na.omit() %>%
@@ -807,12 +827,18 @@ bestModels %>% formattable(
 
 
 ```
+
 SVM Models are more human readable than a random forest with 5k trees, so we give preference to them.
+
+
 ```{r}
 bestModels %>% slice_max(Accuracy, n=6) %>%
-  mutate(meanDiff = max(Accuracy) - Accuracy, z = meanDiff/(sqrt(`Standard Deviation`^2/10 + 0.0161^2/10)), pval = round(pnorm(q=z, lower.tail=F), 4))
+  mutate(meanDiff = max(Accuracy) - Accuracy, z = meanDiff/(sqrt(`Standard Deviation`^2/10 + 0.0161^2/10)), pval = round(pnorm(q=z, lower.tail=F), 4)) %>%
+  kbl() %>%
+  kable_classic(full_width = F, html_font = "cambria")
 
 ```
+
 Hence, our Ranger model is NOT better that our Radial SVM model with all features within a p=0.05, however, all other models are. This is happy! Because we have projected our data set down by a lot and reduced the amount of variables we need and whatnot. WE can better visualize this now using 
 
 
@@ -948,30 +974,19 @@ saveRDS(svmrad_fit, "SVMRad_Fit.rds")
 svmrad_fit <- readRDS("SVMrad_fit.rds")
 ```
 
-```{r}
-PlottingData <- leaguedf %>%
-  filter(Role == "Top") %>%
-  select(c(WinRate, PickRate, BanRate, Role, Tier)) %>%
-  mutate(Tier = fct_recode(Tier, 
-    '1' = 'D',
-    '2' = 'C',
-    '3' = 'B',
-    '4' = 'A',
-    '5' = 'S',
-    '6' = 'God'
-  )) %>%
-  mutate(Tier = as.numeric(as.character(Tier)))
+```{r, echo  = F, eval = F}
 
-contour.list = lapply(PlottingData[,-c(4,5)], function(x) seq(min(x), max(x), len=50))
-contour = expand.grid(contour.list) %>%
-  mutate(Role = "Top")
-contour.pred = predict(svmrad_fit, newdata = contour, decision.values = T)
-```
-
-```{r, fig.height = 10, fig.width = 15}
-
-
-contour.df = fct_recode(contour.pred, 
+MakeIsoSurface <- function(PlottingData, role) {
+      
+  #Prepariing Data
+  
+  
+  #Create contour isosurface
+  contour.list = lapply(PlottingData[,-c(4,5)], function(x) seq(min(x), max(x), len=50))
+  contour = expand.grid(contour.list) %>%
+    mutate(Role = role)
+  contour.pred = predict(svmrad_fit, newdata = contour, decision.values = T)
+  contour.df = fct_recode(contour.pred, 
     '1' = 'D',
     '2' = 'C',
     '3' = 'B',
@@ -980,26 +995,133 @@ contour.df = fct_recode(contour.pred,
     '6' = 'God'
   )
 
+  
+  contour.df = as.numeric(as.character(contour.df))
+  contour.df = array(contour.df, dim = rep(50, 3))
 
-contour.df = as.numeric(as.character(contour.df))
-contour.df = array(contour.df, dim = rep(50, 3))
-plots <- NULL
-for (i in 1:6) {
-  open3d()
-  plot3d(PlottingData[-4], col= PlottingData$Tier)
-  surface = computeContour3d(vol = contour.df, maxvol = max(contour.df), level = i, contour.list$WinRate, contour.list$PickRate, contour.list$BanRate) #LEVEL CONTROLS WHAT TIER WE WANT TO VIEW
-  triangles3d(x = surface[,1], y = surface[,2], z = surface[,3], color = i)
-  plots <- htmltools::tagList(plots, rglwidget())
-  close3d()
+  return (list(contour.list, contour.df))
 }
-mfrow3d(2,3)
-plots
+MakeContourPlot <- function(contour.df, contour.list, PlottingData, role) {
+
+  mfrow3d(2,3)
+  for (i in 1:6) {
+    #Create the actual isosurface from data
+    surface = computeContour3d(
+      vol = contour.df,
+      maxvol = max(contour.df), 
+      level = i,
+      contour.list$WinRate,
+      contour.list$PickRate,
+      contour.list$BanRate) #LEVEL CONTROLS WHAT TIER WE WANT TO VIEW
+    
+    next3d()
+    #Plot surface overlayed with datapoints
+    plot3d(PlottingData[-c(4,5)], col= PlottingData$Tier, tag = role)
+    triangles3d(x = surface[,1], y = surface[,2], z = surface[,3], color = i, tag = role) 
+    title3d(main = as.character(tiers[i]), tag = role)
+  }
+  return (rglwidget())
+}
 
 ```
 
-```{r}
+```{r, echo = T, output = F, eval = F}
 
+tiers = c("D", "C", "B", "A", "S", "God")
+roles = c("Top","Jungle", "Mid", "Adc", "Support")
+
+PlottingData <- leaguedf %>%
+    select(c(WinRate, PickRate, BanRate, Role, Tier)) %>%
+    mutate(Tier = fct_recode(Tier, 
+      '1' = 'D',
+      '2' = 'C',
+      '3' = 'B',
+      '4' = 'A',
+      '5' = 'S',
+      '6' = 'God'
+    )) %>%
+    mutate(Tier = as.numeric(as.character(Tier)))
+
+
+open3d()
+#TOP
+Plotting <- PlottingData %>%
+  filter(Role == "Top")
+
+subtop <- subsceneInfo()$id
+dataList <- MakeIsoSurface(Plotting, "Top")
+contour.list <- dataList[1][[1]]
+contour.df <- dataList[2][[1]]
+
+#Make one surface for each plot and save.
+
+Topplot <-MakeContourPlot(contour.df, contour.list, Plotting, "Top")
+
+#Now take each surface and generate a plot, the same way a loop would, but save it to a unique variable
+
+
+#Repeat the steps every single time.
+#MID
+Plotting <- PlottingData %>%
+  filter(Role == "Mid")
+
+submid <- subsceneInfo()$id
+dataList <- MakeIsoSurface(Plotting, "Mid")
+contour.list <- dataList[1][[1]]
+contour.df <- dataList[2][[1]]
+
+Midplot <- MakeContourPlot(contour.df, contour.list, Plotting, "Mid")
+
+#ADC
+
+Plotting <- PlottingData %>%
+  filter(Role == "Adc")
+
+subadc <- subsceneInfo()$id
+dataList <- MakeIsoSurface(Plotting, "Adc")
+contour.list <- dataList[1][[1]]
+contour.df <- dataList[2][[1]]
+
+Adcplot <- MakeContourPlot(contour.df, contour.list, Plotting, "Adc")
+
+#SUPPORT
+
+Plotting <- PlottingData %>%
+  filter(Role == "Support")
+
+subsupport <- subsceneInfo()$id
+dataList <- MakeIsoSurface(Plotting, "Support")
+contour.list <- dataList[1][[1]]
+contour.df <- dataList[2][[1]]
+
+Supportplot <- MakeContourPlot(contour.df, contour.list, Plotting, "Support")
+
+
+#JUNGLE
+Plotting <- PlottingData %>%
+  filter(Role == "Jungle")
+
+subjungle <- subsceneInfo()$id
+dataList <- MakeIsoSurface(Plotting, "Jungle")
+contour.list <- dataList[1][[1]]
+contour.df <- dataList[2][[1]]
+
+Jungleplot <- MakeContourPlot(contour.df, contour.list, Plotting, "Jungle")
+
+close3d()
+#There is behind the scenes work here with Flexdashboard used to create our widget below. If you want to see it, go to https://github.com/DhAiBt/STOR-320-Group-13 and look at FinalPaper/ContourPlot.nb :-)
 ```
+
+```{r Contour-Plot, fig.height = 10, fig.width  = 10, echo = F}
+path <- "ContourPlot.html"
+doc <- paste(readLines(path), " \n")
+htmltools::tags$iframe(srcdoc = doc,
+            width = "100%",
+            style="height: 100vh;",
+            scrolling = 'no')
+```
+
+### TempChamps Analysis
 
 ```{r}
 #Special Analysis just for TempChamps
@@ -1030,33 +1152,6 @@ table
 
 # CONCLUSION
 IN LESS THAN 4 PARAGRAPHS, YOU SHOULD RESTATE YOUR QUESTIONS ALONG WITH YOUR CONCLUSIONS. THE PURPOSE OF THIS SECTION IS TO SUMMARIZE YOUR FINDINGS (SHORT), DEFEND THE IMPORTANCE OF YOUR RESULTS IN THE REAL WORLD (LONG), AND PROVIDE A ROADMAP FOR OTHERS TO CONTINUE THIS WORK (LONG). ARE YOUR CONCLUSIONS WHAT YOU EXPECTED OR UNUSUAL? WHY SHOULD SOMEONE CARE ABOUT THESE RESULTS? HOW COULD THESE RESULTS BE USED IN THE REAL WORLD? YOU SHOULD PROVIDE IDEAS ABOUT FUTURE DIRECTIONS ON WHERE YOUR MODELING COULD POSSIBLY BE IMPROVED. ARE THERE ANY METHODS YOU DIDN'T USE THAT MAY WORK BETTER? IS THERE DATA YOU DIDN'T HAVE ACCESS TO THAT MAY BE USEFUL IN THIS DATA ANALYSIS? 
-
-
-
-```{r}
-
-
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 ```{r, eval=FALSE}
 Mode <- function(x) {
