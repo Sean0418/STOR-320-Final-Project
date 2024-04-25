@@ -103,7 +103,6 @@ AFTER WORKING WITH THE DATA AND DISCUSSING THE INFORMATION WITH YOUR GROUP, YOU 
 # DATA
 
 
-
 ```{r, message = F, warning = F}
 tempchamps <- leaguedf %>%
   complete(nesting(Name, Role), Patch) %>% # This explicitly finds champions who were only played in a role significantly for less than all of the patches!
@@ -115,26 +114,37 @@ tempdf <- leaguedf %>%
   group_by(Name, Role) %>%
   summarize(
     n = n(),
-    invN = 1/n(),
+    invN = 1/n,
     meanWinRate = mean(WinRate),
     sdWinRate = sd(WinRate),
     meanPickBan = mean(PickBanRate),
     sdPickBan = sd(PickBanRate), 
     label = paste(Name, '\n', Role, sep = " ")
   ) %>%
-  filter(n != 23)
+  filter(n != 23) %>%
+  distinct()
 
 p1 <- tempdf %>%
-  ggplot() + geom_point(mapping = aes(x = meanWinRate, y = meanPickBan, alpha = invN), stroke = 0) +
+  ggplot(mapping = aes(x = meanWinRate, y = meanPickBan, alpha = invN)) + geom_point() +
   geom_vline(xintercept = .50, color = 'red') + 
   coord_trans(x = 'log10', y = 'log10') + 
-  labs(x = "Win Rate Average", y = "Pick Ban Rate Average", title = "Win Rate vs Pick Ban Rate for Temporary champions") + 
-  theme(legend.position = "none")
-p2 <- tempdf %>% select(Name, Role, n) %>% distinct(Name, Role, n) %>%
+  labs(x = "Win Rate Average", y = "Pick Ban Rate Average", title = "Win Rate vs Pick Ban Rate\nFor Temporary champions") + 
+  scale_alpha_continuous(name = "Inverse of n", 
+                         breaks = c(0.05, 0.06, 0.125, 1),
+                         labels = c(23, 16, 8, 1),
+                         range = c(0.1, 1)) + 
+  theme(legend.position = "bottom")
+
+
+p2 <- tempdf %>%
   ggplot() + 
   geom_histogram(mapping = aes(x = n)) + 
-  labs(x = "Patches Present", y = "Count", title = "Distribution of Temporary Champions")
-p1 + p2
+  labs(x = "Patches Present", y = "Count", title = "Distribution of Temporary Champions") + 
+  theme(legend.position = "bottom")
+p1area <- patchwork::area(t = 1, b = 9, l = 1, r = 1)
+p2area <- patchwork::area(t = 1, b = 9, l = 2, r = 2)
+lgndarea <- patchwork::area(t = 10, b = 10, l = 1, r = 2)
+p1 + p2 + guide_area() + plot_layout(guides = "collect", design = c(p1area, p2area, lgndarea))
 ```
 
 
@@ -760,35 +770,44 @@ crossdf$Feature <- crossdf$Feature %>%
 #Fix legends by adding colors and making manual labels
 #Fix Axis labels by adding wrap_text to the feature in the top
 #Fix axis by forcing them to all have the same 0 to 1 scale, so that htye look the same
+
+customlegend <- scale_fill_manual(values = c("svm_linear" = "#E06F1F", "svm_radial" = "#9D5716","ranger" = "#166D9D"),
+                                   labels = c("svm_linear" = "SVM Linear", "svm_radial" = "SVM Radial","ranger" =  "Ranger"))
+
 p1 <- crossdf %>% filter(featurenum == 1) %>%
   na.omit() %>%
   ggplot() + 
   geom_bar(mapping = aes(x = Feature, y = Accuracy, fill = Model), stat = "identity", position = "dodge") + 
   theme_minimal() + 
-    labs(x = "Features", y = "Accuracy", title = "1 Feature Models") + ylim(0, 1)
+    labs(x = "Features", y = "Accuracy", title = "1 Feature Models") + ylim(0, 1) + customlegend+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) + 
+  theme(legend.position = "none")
   
 p2 <- crossdf %>% filter(featurenum == 2) %>%
   na.omit() %>%
   ggplot() + 
   geom_bar(mapping = aes(x = Feature, y = Accuracy, fill = Model), stat = "identity", position = "dodge") + 
   theme_minimal() + 
-    labs(x = "Features", y = "Accuracy", title = "2 Feature Models") + ylim(0,1  )
+    labs(x = "Features", y = "Accuracy", title = "2 Feature Models") + ylim(0,1  ) + customlegend+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
 
 p3 <- crossdf %>% filter(featurenum == 3) %>%
   na.omit() %>%
   ggplot() + 
   geom_bar(mapping = aes(x = Feature, y = Accuracy, fill = Model), stat = "identity", position = "dodge") + 
   theme_minimal() + 
-    labs(x = "Features", y = "Accuracy", title = "3 Feature Models") + ylim(0,1 )
+    labs(x = "Features", y = "Accuracy", title = "3 Feature Models") + ylim(0,1 ) + customlegend + 
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
 
 p4 <- crossdf %>% filter(featurenum == 4) %>%
   na.omit() %>%
   ggplot() + 
   geom_bar(mapping = aes(x = Feature, y = Accuracy, fill = Model), stat = "identity", position = "dodge") + 
   theme_minimal() + 
-    labs(x = "Features", y = "Accuracy", title = "4 Feature Models") + ylim(0,1)
+    labs(x = "Features", y = "Accuracy", title = "4 Feature Models") + ylim(0,1) + customlegend+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
 
-(p1 + p2) / (p3 + p4) + plot_layout(guides = "collect")
+(p1 + p2) / (p3 + p4) + plot_layout(guides = "collect", axis_titles = "collect") + plot_annotation(title = "Models and Mean Cross-Validated Accuracy")
 ```
 
 Ranger is best slightly with all 4 features, at 75.04% success. We will see if this is different statistically significantly from BanRate/PickRate
@@ -893,12 +912,12 @@ saveRDS(svmlin_fit, "SVMLin_Fit.rds")
 
 #improvement idea to fix both issues : Define train function that returns either previous best C and best sigma OR new best C and best sigma? Locally defined since function and if we can keep best C and sigma we can train a model on those specifically!
 
-grid <- expand.grid(C = seq(0, 5, length = 5), sigma = seq(0, 1, length = 5))
+grid <- expand.grid(C = seq(0, 5, length = 5), sigma = seq(0, 0.1, length = 5))
 
 cmin = 0
 cmax = 5
 sigmamin = 0
-sigmamax = 0.3
+sigmamax = 0.1
 done = F
 last_acc = 0
 
@@ -917,17 +936,19 @@ while (done == F) {
   
   
   if (last_acc > best_fit$Accuracy[1]) {
-    print("Best fit Higher then last Accuracy")
+    print("Best fit Lower then last Accuracy")
     done = T
   }
   else {
-    if (best_fit$C[1] == cmax) {
-      cmin = cmin + cmax
-      cmax = cmax * 2
-    }
-    if (best_fit$sigma[1] == sigmamax) {
-      sigmamin = sigmamin + sigmamax
-      sigmamax = sigmamax *2
+    if (best_fit$C[1] == cmax | best_fit$C[1] == cmin) {
+      if (best_fit$C[1] == cmax) {
+        cmax = cmax + (cmax - cmin)/2
+        cmin = cmax - (cmax - cmin)/2
+      }
+      if (best_fit$C[1] == cmin & (cmin - (cmax - cmin) / 2) > 0) {
+        cmax = cmin + (cmax - cmin) / 2
+        cmin = cmin - (cmax - cmin) / 2
+      }
     }
     else {
       cmin <- svmrad_fit$results %>%
@@ -940,6 +961,21 @@ while (done == F) {
         slice_min(C, n = 1)
       cmax <- cmax$C[1]
       
+      
+      
+    }
+    
+    if (best_fit$sigma[1] == sigmamax | best_fit$sigma[1] == sigmamin) {
+      if (best_fit$sigma[1] == sigmamax) {
+      sigmamin = sigmamax - (sigmamax - sigmamin) / 2
+      sigmamax = sigmamax + (sigmamax - sigmamin) /2
+      }
+      if (best_fit$sigma[1] == sigmamin & (sigmamin - (sigmamax - sigmamin)/2) > 0) {
+        sigmamin = sigmamin - (sigmamax - sigmamin)/2
+        sigmamax = sigmamin + (sigmamax - sigmamin)/2
+      }
+    }
+    else {
       sigmamin = svmrad_fit$results %>%
         filter(sigma < best_fit$sigma) %>%
         slice_max(sigma, n = 1)
@@ -949,11 +985,13 @@ while (done == F) {
         filter(sigma > best_fit$sigma) %>%
         slice_min(sigma, n =1)
       sigmamax = sigmamax$sigma[1]
+      }
+    if (abs(cmin - cmax) < 0.01) {
+      print("Within 0.01")
+      print(abs(cmin - cmax))
+      done = T      }
+    else {
       
-      if (abs(cmin - cmax) < 0.01) {
-        print("Within 0.01")
-        print(abs(cmin - cmax))
-        done = T      }
       grid <- expand.grid(C = seq(cmin, cmax, length = 5), sigma = seq(sigmamin, sigmamax, length = 5))
       last_acc <- best_fit$Accuracy[1]
       print(paste("New cmin is: ", cmin, "New cmax is:", cmax,  sep = ' '))
@@ -965,9 +1003,20 @@ svmrad_fit <- train(Tier ~ .,
                     method= "svmRadial",
                     trControl = fitControl,
                     tuneGrid = grid)
-saveRDS(svmrad_fit, "SVMRad_Fit.rds")
+#saveRDS(svmrad_fit, "SVMRad_Fit.rds")
 ```
 
+```{r}
+svmrad_fit <- train(Tier ~ .,
+                    data = select(leaguedf, c(WinRate, PickRate, BanRate, Role, Tier)),
+                    method = "svmRadial",
+                    trControl = fitControl,
+                    tuneGrid = grid <- expand.grid(C = 4.6875, sigma = 0.10625))
+```
+
+```{r}
+svmrad_fit$results
+```
 ```{r, echo = F}
 #rf_fit <- readRDS("RF_Fit.rds")
 #svmlin_fit <- readRDS("SVMLin_fit.rds")
@@ -1112,12 +1161,12 @@ close3d()
 #There is behind the scenes work here with Flexdashboard used to create our widget below. If you want to see it, go to https://github.com/DhAiBt/STOR-320-Group-13 and look at FinalPaper/ContourPlot.nb :-)
 ```
 
-```{r Contour-Plot, fig.height = 10, fig.width  = 10, echo = F}
+```{r Contour-Plot, fig.height = 5, fig.width  = 10, echo = F}
 path <- "ContourPlot.html"
 doc <- paste(readLines(path), " \n")
 htmltools::tags$iframe(srcdoc = doc,
             width = "100%",
-            style="height: 100vh;",
+            style="height: 60vh;",
             scrolling = 'no')
 ```
 

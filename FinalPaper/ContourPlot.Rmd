@@ -60,7 +60,7 @@ MakeIsoSurface <- function(PlottingData, role) {
   
   
   #Create contour isosurface
-  contour.list = lapply(PlottingData[,-c(4,5)], function(x) seq(min(x), max(x), len=50))
+  contour.list = lapply(PlottingData[,-c(4,5)], function(x) seq(min(x), max(x), len=75))
   contour = expand.grid(contour.list) %>%
     mutate(Role = role)
   contour.pred = predict(svmrad_fit, newdata = contour, decision.values = T)
@@ -75,7 +75,7 @@ MakeIsoSurface <- function(PlottingData, role) {
 
   
   contour.df = as.numeric(as.character(contour.df))
-  contour.df = array(contour.df, dim = rep(50, 3))
+  contour.df = array(contour.df, dim = rep(75, 3))
 
   return (list(contour.list, contour.df))
 }
@@ -104,7 +104,7 @@ MakeContourPlot <- function(contour.df, contour.list, PlottingData, role) {
 ```
 
 
-```{r, include = F}
+```{r DataGeneration, include = F}
 
 tiers = c("D", "C", "B", "A", "S", "God")
 roles = c("Top","Jungle", "Mid", "Adc", "Support")
@@ -195,30 +195,30 @@ Row {data-height=600, .tabset}
 
 ### Top
 
-```{r, echo = F}
+```{r TopPlot, echo = F}
 Topplot 
 ```
 
 ### Jungle
 
-```{r, echo = F}
+```{r Jungleplot, echo = F}
 Jungleplot
 ```
 
 ### Mid
 
-```{r, echo = F}
+```{r Midplot, echo = F}
 Midplot
 ```
 
 ### ADC
 
-```{r,  echo =F}
+```{r ADCplot,  echo =F}
 Adcplot
 ```
 
 ### Support
 
-```{r,  echo = F}
+```{r Supportplot,  echo = F}
 Supportplot
 ```
