@@ -85,7 +85,7 @@ annotations = list(
 
 # INTRODUCTION
 
-```{r}
+```{r Dataset, echo = F}
 
 leaguedf <- read_csv('../data_sets/S13LeagueOfLegendsData.csv', 
                       col_types=c('c', 'c', 'c', 'c', 'c', 'd', 'd', 'd', 'd', 'd', 'd', 'd', 'c'), 
@@ -97,14 +97,16 @@ leaguedf <- read_csv('../data_sets/S13LeagueOfLegendsData.csv',
 leaguedf$Tier = as.factor(leaguedf$Tier) %>%
   fct_relevel(c("God", "S", "A", "B", "C", "D"))
 
-head(leaguedf, 5)
+head(leaguedf, 5) %>% kbl() %>%
+  kable_classic(full_width = F, html_font = "cambria")
 ```
 AFTER WORKING WITH THE DATA AND DISCUSSING THE INFORMATION WITH YOUR GROUP, YOU SHOULD DESCRIBE 2 QUESTIONS THAT ARE CREATIVE AND INNOVATIVE. YOU SHOULD EXPLAIN WHY THESE QUESTIONS ARE INTERESTING AND WHY THEY DESERVE FURTHER INVESTIGATION. I ADVISE TO THINK OF REASONS WHY AN OWNER OF THE DATA MIGHT BENEFIT FROM ANSWERS TO THESE QUESTIONS. THINK OF REASONS WHY THE WORLD MAY BE INTERESTED IN THESE QUESITONS. THE PURPOSE OF THE INTRODUCTION IS TO STATE SOME INTERESTING QUESTIONS AND DEFEND THE VALUE OF THESE QUESTIONS. THIS INTRODUCTION SHOULD BE WRITTEN IN A WAY THAT SHOULD GET THE READER EXCITED ABOUT SEEING YOUR RESULTS. THIS SHOULD BE WRITTEN IN NO MORE THAN 4 PARAGRAPHS.
 
 # DATA
 
+TempChamps
 
-```{r, message = F, warning = F}
+```{r TempChampsPlot, echo = F, message = F, warning = F}
 tempchamps <- leaguedf %>%
   complete(nesting(Name, Role), Patch) %>% # This explicitly finds champions who were only played in a role significantly for less than all of the patches!
   filter(!complete.cases(.)) %>%
@@ -184,7 +186,7 @@ leaguedf %>%
 
 
 
-```{r, echo = F}
+```{r CorrelationFunc, echo = F}
 
 
 MakeCorrelationDf <- function(varname, outputname = varname) {
@@ -215,7 +217,10 @@ MakeCorrelationDf <- function(varname, outputname = varname) {
 }
 ```
 
-```{r, warning = F}
+
+CORRELATION BOXPLOT
+
+```{r PbrCorrelation, echo  = F, warning = F}
 PbrCorrelation <- MakeCorrelationDf("PickBanRate", "Pbr") %>%
   group_by(Champion2) %>%
   arrange(PbrCorrelation) %>%
@@ -236,13 +241,13 @@ PbrCorrelation %>% filter(Champion2 %in% c("Tahm Kench Support", "Senna Support"
 ```
 
 
-
-```{r}
+Volatility Overview
+```{r Std winRate, echo = F, message = F}
 leaguedf %>% 
   group_by(Name) %>% 
   summarise(Mean_pick=mean(PickRate, na.rm = TRUE), Std_pick=sd(PickRate, na.rm=TRUE), Mean_win=mean(WinRate, na.rm = TRUE), Std_win=sd(WinRate, na.rm=TRUE)) %>% 
   arrange(desc(Mean_pick)) %>% 
-  ggplot(aes(Mean_pick, Std_win)) + geom_point() + labs(x = "Mean Pick Rate", y = "Standard Deviation Win Rate") + 
+  ggplot(aes(Mean_pick, Std_win)) + geom_point() + labs(x = "Mean Pick Rate", y = "Standard Deviation Win Rate", title = "Mean PickRate and Volatility of WinRate") + 
   coord_trans(x = 'log10', y = 'log10') + 
   geom_smooth(aes(x = Mean_pick, y = Std_win), method = 'lm', se = F) # THIS LOOKS NON LINEAR BUT IT IS LINEAR, ITS JUST ON A LOG SCALE!!!!
 
@@ -270,7 +275,7 @@ IN LESS THAN 6 PARAGRAPHS, YOU SHOULD DESCRIBE THE DATA USED TO ANSWER THE QUEST
 
 # RESULTS
 
-```{r, echo = F}
+```{r Pallettes, echo = F}
 KMeansPalette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00")
 TierPalette <- c("#332288", "#117733", "#44AA99", "#88CCEE", "#DDCC77", "#CC6677")
 
@@ -279,9 +284,9 @@ TierPalette <- c("#332288", "#117733", "#44AA99", "#88CCEE", "#DDCC77", "#CC6677
 
 ## Clustering Analysis
 
+KMeans Analysis
 
-
-```{r, fig.height = 10, fig.width = 10}
+```{r KMeans, fig.height = 10, fig.width = 10, warning = F, echo = F}
 #Cluster Analysis with K-Means
 
 
@@ -419,7 +424,7 @@ plot(HCluster, xlab = '', sub = '', cex = .9) #Dendrogram!!!
 ```
 
 
-```{r, fig.height = 10, fig.width = 10, eval  = F}
+```{r, fig.height = 10, fig.width = 10, eval  = F, echo = F}
 
 leaguedf$HClust <- as.factor(cutree(HCluster, 5))
 
@@ -493,6 +498,8 @@ heatplot & plot_annotation(title = "Similarity Heatmap", subtitle="This should f
 
 ## Part 2: Classification Exploration
 
+### Feature Selection
+
 ```{r, eval = F, echo = F}
 PCAdf <- leaguedf %>%
   mutate(Class = paste("Class", Class, sep='_')) %>%
@@ -551,7 +558,7 @@ eigFrame %>%
 
 Based on the PCA Analysis, we can maybe see that we want 7-9 variables, but we don't know. Please ask!!!!
 
-```{r Stepwise Regression, fig.height = 10, fig.width = 10}
+```{r Stepwise Regression, fig.height = 10, fig.width = 10, warning =  F, echo = F}
 Stepdf <- leaguedf %>%
   mutate(Class = paste("Class", Class, sep='_')) %>%
   pivot_wider(
@@ -618,7 +625,7 @@ plot + plot_annotation(title = "BIC Analysis with Stepwise Regression faceted by
 We can see that around $8$ feature for each tier is optimal or near optimal, so we want to find 7 variables to use. To do this, we use a Boruta model, which can naturally deal with high dimensional categorical variables in an efficient way for multi-class regressions. A boruta model generates a decision tree in a specific manner and sees how inclusion and emphasis of different variables differently affects the accuracy of a random forest model. Because of this, it is very good at feature selection for Random Forest models, of which the Ranger model which we use is a subset of. Beyond that, it measures importance by gathering Z scores of mean decrease accuracy measure (DAM). 
 
 
-```{r, eval = T}
+```{r, eval = T, echo = F}
 
 #Feature Selection
 
@@ -631,9 +638,10 @@ plot(boruta, las = 2, cex.axis = 0.7)
 
 We wamt 7 features, and knowing that Role woudl account for 5 in the stepwise regressoin, we can see that WinRate, PickRate, Role, and BanRate are the 4 most likely to be influential variables, and they would make up 8 total features, which is only slightly above what we wanted.
 
+### Cross Validation
 We choose K-Fold over LOOCV for cross validation because 1) K-Fold requires much less computation power and time and this already took 5 hours, and 2) K-Fold can better estimate model accuracy's for machine learning by reducing bias variance, i.e. training on a smaller set will result in less overfitting. K-Fold cross validation functions as: Partition the dataset $S$ into $k$ sets, $S_1, S_2, \ldots, S_k$, loop over $1$ to $k$ with $i$ as the counter, next train each model on the data set $S - S_i$, then test each model on the sample $S_i$ and record the accuracy. When this is finished we compare the mean of each accuracy to best understand the overall standard deviation.
 
-```{r}
+```{r, echo = F}
 
 
 
@@ -645,7 +653,7 @@ leaguedf <- leaguedf %>% select(-c(PickBanRate, Cluster, Score, Trend))
 
 ```
 
-```{r}
+```{r, echo = F}
 leaguedf$sample <- sample(1:nrow(leaguedf), nrow(leaguedf))
 
 b = nrow(leaguedf)/10
@@ -761,12 +769,7 @@ crossdf$Feature <- crossdf$Feature %>%
 ```
 
 
-```{r, fig.height = 10, fig.width=10}
-
-#TODO: Fix legends, axis, and axis labels
-#Fix legends by adding colors and making manual labels
-#Fix Axis labels by adding wrap_text to the feature in the top
-#Fix axis by forcing them to all have the same 0 to 1 scale, so that htye look the same
+```{r BarChart, fig.height = 10, fig.width=10, echo = F}
 
 customlegend <- scale_fill_manual(values = c("svm_linear" = "#648FFF", "svm_radial" = "#DC267F","ranger" = "#FFB000"),
                                    labels = c("svm_linear" = "SVM Linear", "svm_radial" = "SVM Radial","ranger" =  "Ranger"))
@@ -837,25 +840,22 @@ tab <- bestModels %>% formattable(
        `Accuracy` = formatter("span", x ~ percent(x)))
 )
 
-tab
 ```
 
-```{r, fig.height = 10, fig.width = 15}
-```
-
-SVM Models are more human readable than a random forest with 5k trees, so we give preference to them.
-
-
-```{r}
+```{r Model Comparison Chart, echo = F}
 bestModels %>% slice_max(Accuracy, n=6) %>%
-  mutate(meanDiff = max(Accuracy) - Accuracy, z = meanDiff/(sqrt(`Standard Deviation`^2/10 + 0.0161^2/10)), pval = round(pnorm(q=z, lower.tail=F), 4)) %>%
-  kbl() %>%
+  mutate(meanDiff = max(Accuracy) - Accuracy, 
+         z = meanDiff/(sqrt(`Standard Deviation`^2/10 + 0.0161^2/10)), 
+         pval = round(pnorm(q=z, lower.tail=F), 4)) %>%
+  rename(`Z Score` = z,`Distance from $\\mu_0$` =  meanDiff, `P Value` = pval) %>%
+  kbl(caption = "Model Comparisons with $\\mu_0 = 0.7504$") %>%
   kable_classic(full_width = F, html_font = "cambria")
 
 ```
 
 Hence, our Ranger model is NOT better that our Radial SVM model with all features within a p=0.05, however, all other models are. This is happy! Because we have projected our data set down by a lot and reduced the amount of variables we need and whatnot. WE can better visualize this now using 
 
+### Hypertuning and Fitting Model
 
 ```{r, eval = F, echo = F, echo = F}
 #Model Fitting
@@ -1002,7 +1002,7 @@ svmrad_fit <- train(Tier ~ .,
 #saveRDS(svmrad_fit, "SVMRad_Fit.rds")
 ```
 
-```{r}
+```{r, echo = F, eval = F}
 svmrad_fit <- train(Tier ~ .,
                     data = select(leaguedf, c(WinRate, PickRate, BanRate, Role, Tier)),
                     method = "svmRadial",
@@ -1010,9 +1010,6 @@ svmrad_fit <- train(Tier ~ .,
                     tuneGrid = grid <- expand.grid(C = 4.6875, sigma = 0.10625))
 ```
 
-```{r}
-svmrad_fit$results
-```
 ```{r, echo = F}
 #rf_fit <- readRDS("RF_Fit.rds")
 #svmlin_fit <- readRDS("SVMLin_fit.rds")
@@ -1069,6 +1066,8 @@ MakeContourPlot <- function(contour.df, contour.list, PlottingData, role) {
 }
 
 ```
+
+### Visualization
 
 ```{r, echo = T, output = F, eval = F, echo = F}
 
