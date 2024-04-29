@@ -24,6 +24,7 @@ library(misc3d)
 library(htmlwidgets)
 library(htmltools)
 library(knitr)
+library(figpatch)
 options(rgl.useNULL = TRUE)
 knitr::opts_chunk$set(fig.align = "center")
 ```
@@ -149,7 +150,7 @@ p1 + p2 + guide_area() + plot_layout(guides = "collect", design = c(p1area, p2ar
 
 
 
-```{r, message = F, warning = F}
+```{r, message = F, warning = F, echo = F, eval = F}
 leaguedf %>%
   select("Name", "PickBanRate", "WinRate", "Role", "RoleRate", "Class", "Patch") %>%
   filter(!(Class == "NULL")) %>%
@@ -249,7 +250,7 @@ leaguedf %>%
 
 
 
-```{r, fig.height = 15}
+```{r, fig.height = 15, eval = F, echo = F}
 plot1 <- leaguedf %>%
   filter(Name %in% c("Fiora", "Darius", "Garen", "Aatrox", "Jax"), Role == "Top") %>%
   ggplot() + geom_count(aes(x = as.factor(Patch), y = Name, size = PickRate, color = Name)) + labs(x = "Patch", y = "Name", title = "Pick Rate")
@@ -270,8 +271,8 @@ IN LESS THAN 6 PARAGRAPHS, YOU SHOULD DESCRIBE THE DATA USED TO ANSWER THE QUEST
 # RESULTS
 
 ```{r, echo = F}
-KMeansPalette <- c("#FFB347", "#9D38BD", "#e4ff33", "#2dd7ed", "#7CFC00", "#EF476F")
-TierPalette <- c("#A2B5CF", "#E7DD49", "#8FB0C5", "#F7CAC9", "#C2E0CB", "#D7BDE2")
+KMeansPalette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00")
+TierPalette <- c("#332288", "#117733", "#44AA99", "#88CCEE", "#DDCC77", "#CC6677")
 
 
 ```
@@ -289,7 +290,7 @@ TierPalette <- c("#A2B5CF", "#E7DD49", "#8FB0C5", "#F7CAC9", "#C2E0CB", "#D7BDE2
 #This is a high dimensional Data set
 
 Normaldf <- leaguedf %>%
-  select(-c(Tier, Score, Trend, PickRate, BanRate)) %>%
+  select(-c(Tier, Score, Trend, PickBanRate, Name)) %>%
     pivot_wider(names_from = Role,
               values_from = Role,
               values_fn = function(x) 1,
@@ -299,14 +300,11 @@ Normaldf <- leaguedf %>%
                 values_from = Class,
                 values_fn = function(x) 1,
                 values_fill = 0) %>%
-    pivot_wider(names_from = Name,
-                values_from = Name,
-                values_fn = function(x) 1,
-                values_fill =0) %>%
   mutate(
     WinRate = (WinRate - mean(WinRate))/sd(WinRate),
     RoleRate = (RoleRate - mean(RoleRate))/ sd(RoleRate),
-    PickBanRate = (PickBanRate - mean(PickBanRate)) / sd(PickBanRate),
+    PickRate = (PickRate - mean(PickRate)) / sd(PickRate),
+    BanRate = (BanRate - mean(BanRate)) / sd(BanRate),
     KDA = (KDA - mean(KDA)) / sd(KDA),
     Patch = (Patch -mean(Patch)) / sd(Patch)
   )
@@ -322,7 +320,7 @@ leaguedf$Cluster = as.factor(data$cluster)
 ordering <- leaguedf %>%
   group_by(Cluster) %>%
   summarize(RoleRate = mean(RoleRate)) %>%
-  arrange(RoleRate) %>%
+  arrange(desc(RoleRate)) %>%
   mutate(transformation = row_number())
 
 transform <- function (x) {
@@ -413,7 +411,7 @@ Meta_Tiers <- wrap_elements(plot1a + plot1b + plot1c + guide_area() +
 
 
 
-```{r, fig.height = 10, fig.width = 10}
+```{r, fig.height = 10, fig.width = 10, eval = F, echo = F}
 #Hierarchical Clustering
 HCluster <- hclust(dist(Normaldf))
 
@@ -421,7 +419,7 @@ plot(HCluster, xlab = '', sub = '', cex = .9) #Dendrogram!!!
 ```
 
 
-```{r, fig.height = 10, fig.width = 10}
+```{r, fig.height = 10, fig.width = 10, eval  = F}
 
 leaguedf$HClust <- as.factor(cutree(HCluster, 5))
 
@@ -455,7 +453,7 @@ plot1c <- leaguedf %>%
 ```
 
 
-```{r}
+```{r, eval = F, echo = F}
 leaguedf %>%
   rename(`Hierarchical Cluster` = HClust) %>%
   group_by(`Hierarchical Cluster`) %>%
@@ -476,7 +474,7 @@ leaguedf %>%
   - 4: highly picked champs
   - 5: Yuumi <3
 
-```{r, message = F, echo = F, eval = F}
+```{r, message = F, echo = F, eval = F, echo = F}
 Propdf <- leaguedf %>%
   group_by(Tier, Cluster) %>%
   summarize(count = n()) %>%
@@ -495,7 +493,7 @@ heatplot & plot_annotation(title = "Similarity Heatmap", subtitle="This should f
 
 ## Part 2: Classification Exploration
 
-```{r}
+```{r, eval = F, echo = F}
 PCAdf <- leaguedf %>%
   mutate(Class = paste("Class", Class, sep='_')) %>%
   pivot_wider(
@@ -516,7 +514,7 @@ PCA1 <- prcomp(PCAdf, center = T, scale = F)
 
 ```
 
-```{r}
+```{r, eval = F, echo = F}
 
 eigensum <- function(eigen) {
   answer <- vector(length = length(eigen)) 
@@ -553,9 +551,7 @@ eigFrame %>%
 
 Based on the PCA Analysis, we can maybe see that we want 7-9 variables, but we don't know. Please ask!!!!
 
-```{r, fig.height = 10, fig.width = 10}
-Tiers <- unique(leaguedf$Tier)
-
+```{r Stepwise Regression, fig.height = 10, fig.width = 10}
 Stepdf <- leaguedf %>%
   mutate(Class = paste("Class", Class, sep='_')) %>%
   pivot_wider(
@@ -570,7 +566,7 @@ Stepdf <- leaguedf %>%
     values_fn = function (x) 1,
     values_fill = 0
   ) %>%
-  select(-c(Score, Trend, Patch, Name, HClust, Cluster))
+  select(-c(Score, Trend, Patch, Name, Cluster))
 stepResults <- tibble(Tier = c('0'), results = c(list()), .rows = 0)
 tiers <- unique(leaguedf$Tier)
 
@@ -587,7 +583,7 @@ for (tier in tiers) {
 }
 plist = vector('list', length = length(tiers))
 counter = 1
-for (tier in tiers) {
+for (tier in levels(tiers)) {
   testVars <- stepResults %>% filter(Tier == tier) %>% select(results)
   testVars <- testVars$results[[1]]
   
@@ -607,25 +603,26 @@ for (tier in tiers) {
     ggplot(mapping = aes(x = features, y = rSquared)) + 
     geom_point(shape = 4, color = "red")  + 
     geom_line() + 
-    geom_vline(xintercept = 7, color = 'blue') + 
-    labs(x = "Number of Features", y= "BIC") + 
-    theme_minimal()
+    geom_vline(xintercept = 8, color = 'blue') + 
+    labs(x = "Number of Features", y= "BIC", title = tier) + 
+    theme_minimal() + 
+    theme(plot.title = element_text(hjust = 0.5))
   plist[[counter]] <- p1
   counter = counter + 1
 }
 
 plot <- Reduce('+', plist)
-plot + plot_annotation(title = "BIC Analysis with Bi-Directional Stepwise Regression faceted by Tier", subtitle = "Verticle line at x=7")
+plot + plot_annotation(title = "BIC Analysis with Stepwise Regression faceted by Tier", subtitle = "Vertical Line at x=8") + plot_layout(axis_titles = "collect")
 ```
 
-We can see that around $7$ feature for each tier is optimal or near optimal, so we want to find 7 variables to use. To do this, we use a Boruta model, which can naturally deal with high dimensional categorical variables in an efficient way for multi-class regressions. A boruta model generates a decision tree in a specific manner and sees how inclusion and emphasis of different variables differently affects the accuracy of a random forest model. Because of this, it is very good at feature selection for Random Forest models, of which the Ranger model which we use is a subset of. Beyond that, it measures importance by gathering Z scores of mean decrease accuracy measure (DAM). 
+We can see that around $8$ feature for each tier is optimal or near optimal, so we want to find 7 variables to use. To do this, we use a Boruta model, which can naturally deal with high dimensional categorical variables in an efficient way for multi-class regressions. A boruta model generates a decision tree in a specific manner and sees how inclusion and emphasis of different variables differently affects the accuracy of a random forest model. Because of this, it is very good at feature selection for Random Forest models, of which the Ranger model which we use is a subset of. Beyond that, it measures importance by gathering Z scores of mean decrease accuracy measure (DAM). 
 
 
 ```{r, eval = T}
 
 #Feature Selection
 
-boruta <- Boruta(Tier ~ ., data = select(leaguedf, -c(Score, Trend, Cluster, HClust, PickBanRate)))
+boruta <- Boruta(Tier ~ ., data = select(leaguedf, -c(Score, Trend, Cluster, PickBanRate)))
 
 plot(boruta, las = 2, cex.axis = 0.7)
 ```
@@ -643,7 +640,7 @@ We choose K-Fold over LOOCV for cross validation because 1) K-Fold requires much
 featurecombs <- powerSet(c('WinRate', 'PickRate', 'Role', 'BanRate'))# 2^4 = 16 so 16 samples, for 3 models each with 20 runs gives a total of 960 trained models.
 featurecombs <- featurecombs[-1]
 
-leaguedf <- leaguedf %>% select(-c(PickBanRate, HClust, Cluster, Score, Trend)) 
+leaguedf <- leaguedf %>% select(-c(PickBanRate, Cluster, Score, Trend)) 
 
 
 ```
@@ -666,7 +663,7 @@ fitControl <- trainControl(method='CV',
                            verboseIter=F)
 ```
 
-```{r, eval = F}
+```{r, eval = F, echo = F}
 #Using a function here makes sure each model stays local and so we end up with a faster training. Consider using this idea elsewhere in the file!!!
 trainandtest <- function (method, traindf, testdf, control) {
   if (method == "ranger" & length(colnames(traindf)) < 3) {
@@ -771,7 +768,7 @@ crossdf$Feature <- crossdf$Feature %>%
 #Fix Axis labels by adding wrap_text to the feature in the top
 #Fix axis by forcing them to all have the same 0 to 1 scale, so that htye look the same
 
-customlegend <- scale_fill_manual(values = c("svm_linear" = "#E06F1F", "svm_radial" = "#9D5716","ranger" = "#166D9D"),
+customlegend <- scale_fill_manual(values = c("svm_linear" = "#648FFF", "svm_radial" = "#DC267F","ranger" = "#FFB000"),
                                    labels = c("svm_linear" = "SVM Linear", "svm_radial" = "SVM Radial","ranger" =  "Ranger"))
 
 p1 <- crossdf %>% filter(featurenum == 1) %>%
@@ -807,14 +804,10 @@ p4 <- crossdf %>% filter(featurenum == 4) %>%
     labs(x = "Features", y = "Accuracy", title = "4 Feature Models") + ylim(0,1) + customlegend+
   scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
 
-(p1 + p2) / (p3 + p4) + plot_layout(guides = "collect", axis_titles = "collect") + plot_annotation(title = "Models and Mean Cross-Validated Accuracy")
-```
+pw <- (p1 + p2) / (p3 + p4) + plot_layout(guides = "collect", axis_titles = "collect") + plot_annotation(title = "Models and Mean Cross-Validated Accuracy")
 
-Ranger is best slightly with all 4 features, at 75.04% success. We will see if this is different statistically significantly from BanRate/PickRate
+pw
 
-### Top Accuracy Comparison
-
-```{r}
 bestModels <- crossdf %>% na.omit() %>%
   group_by(Model) %>%
   slice_max(Accuracy, n=3) %>%
@@ -828,23 +821,26 @@ bestModels <- crossdf %>% na.omit() %>%
   select(-Feature, -featurenum, -sd) %>%
   ungroup()
 
-bestModels %>% formattable(
+tab <- bestModels %>% formattable(
   list(`WinRate` = formatter("span",
-                        x ~ icontext(ifelse(x > 0, "ok", "remove"), ifelse(x > 0, "Yes", "No")),
+                        x ~ icontext(ifelse(x > 0, "ok", "remove"), ifelse(x > 0, "", "")),
                         style = x ~ style(color = ifelse(x < 1, "red", "green"))),
        `PickRate` = formatter("span",
-                        x ~ icontext(ifelse(x > 0, "ok", "remove"), ifelse(x > 0, "Yes", "No")),
+                        x ~ icontext(ifelse(x > 0, "ok", "remove"), ifelse(x > 0, "", "")),
                         style = x ~ style(color = ifelse(x < 1, "red", "green"))),
        `BanRate` = formatter("span",
-                        x ~ icontext(ifelse(x > 0, "ok", "remove"), ifelse(x > 0, "Yes", "No")),
+                        x ~ icontext(ifelse(x > 0, "ok", "remove"), ifelse(x > 0, "", "")),
                         style = x ~ style(color = ifelse(x < 1, "red", "green"))),
        `Role` = formatter("span",
-                        x ~ icontext(ifelse(x > 0, "ok", "remove"), ifelse(x > 0, "Yes", "No")),
+                        x ~ icontext(ifelse(x > 0, "ok", "remove"), ifelse(x > 0, "", "")),
                         style = x ~ style(color = ifelse(x < 1, "red", "green"))),
        `Accuracy` = formatter("span", x ~ percent(x)))
 )
 
+tab
+```
 
+```{r, fig.height = 10, fig.width = 15}
 ```
 
 SVM Models are more human readable than a random forest with 5k trees, so we give preference to them.
@@ -861,7 +857,7 @@ bestModels %>% slice_max(Accuracy, n=6) %>%
 Hence, our Ranger model is NOT better that our Radial SVM model with all features within a p=0.05, however, all other models are. This is happy! Because we have projected our data set down by a lot and reduced the amount of variables we need and whatnot. WE can better visualize this now using 
 
 
-```{r, eval = F, echo = F}
+```{r, eval = F, echo = F, echo = F}
 #Model Fitting
 #Deprecated wont work!
 grid <- expand.grid(mtry = c(6,9,12), splitrule=c("extratrees", "gini"), min.node.size=c(1,3,6,10))
@@ -881,7 +877,7 @@ rf_fit <- train(Tier ~ .,
 saveRDS(rf_fit, "RF_Fit.rds")
 ```
 
-```{r, eval = F, warning = F, echo = F}
+```{r, eval = F, echo = F, warning = F, echo = F}
 
 grid <- expand.grid(C = seq(0, 10, length = 20))
 
@@ -899,7 +895,7 @@ svmlin_fit <- train(Tier ~ .,
 saveRDS(svmlin_fit, "SVMLin_Fit.rds")
 ```
 
-```{r, eval = F, warning = F}
+```{r, eval = F, echo = F, warning = F}
 #Hypertuning parameters
 #Algorithm is a greedy alg i came up with that goes as follows:
 #1. Test with parameters, find the best fit, if it worst than the last then we are done, save the model
@@ -1023,7 +1019,7 @@ svmrad_fit$results
 svmrad_fit <- readRDS("SVMrad_fit.rds")
 ```
 
-```{r, echo  = F, eval = F}
+```{r, echo  = F, eval = F, echo = F}
 
 MakeIsoSurface <- function(PlottingData, role) {
       
@@ -1074,7 +1070,7 @@ MakeContourPlot <- function(contour.df, contour.list, PlottingData, role) {
 
 ```
 
-```{r, echo = T, output = F, eval = F}
+```{r, echo = T, output = F, eval = F, echo = F}
 
 tiers = c("D", "C", "B", "A", "S", "God")
 roles = c("Top","Jungle", "Mid", "Adc", "Support")
@@ -1172,7 +1168,7 @@ htmltools::tags$iframe(srcdoc = doc,
 
 ### TempChamps Analysis
 
-```{r}
+```{r TempChamps Tables}
 #Special Analysis just for TempChamps
 #TODO: Fix table format so it isn't disgusting
 leaguedf$Pred_svmrad = predict(svmrad_fit, leaguedf)
@@ -1230,12 +1226,12 @@ write.csv(Boundarydf, "BoundaryFrame.csv")
 ```
 
 
-```{r, echo=FALSE, eval = F} 
+```{r, echo=FALSE, eval = F, echo = F} 
 #CHange Eval after Frame is created
 Boundarydf <- read_csv("BoundaryFrame.csv")
 ```
 
-```{r, fig.width = 10, eval = F}
+```{r, fig.width = 10, eval = F, echo = F}
 #Visualization #1 for Ranger Model
 acc_plot <- rf_fit$results %>%  
   mutate(mtry = as.character(mtry), min.node.size = as.character(min.node.size)) %>%
