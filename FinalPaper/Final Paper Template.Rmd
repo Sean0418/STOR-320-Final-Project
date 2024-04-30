@@ -29,61 +29,20 @@ options(rgl.useNULL = TRUE)
 knitr::opts_chunk$set(fig.align = "center")
 ```
 
-```{r, echo= FALSE}
-annotations = list( 
-  list( 
-    x = 0.015,  
-    y = 1.0,  
-    text = "Adc",  
-    xref = "paper",  
-    yref = "paper",  
-    xanchor = "center",  
-    yanchor = "bottom",  
-    showarrow = FALSE 
-  ),  
-  list( 
-    x = 0.3925,  
-    y = 1,  
-    text = "Jungle",  
-    xref = "paper",  
-    yref = "paper",  
-    xanchor = "center",  
-    yanchor = "bottom",  
-    showarrow = FALSE 
-  ),  
-  list( 
-    x = 0.715,  
-    y = 1,  
-    text = "Mid",  
-    xref = "paper",  
-    yref = "paper",  
-    xanchor = "center",  
-    yanchor = "bottom",  
-    showarrow = FALSE 
-  ),
-  list( 
-    x = 0.0375,  
-    y = 0.46,  
-    text = "Support",  
-    xref = "paper",  
-    yref = "paper",  
-    xanchor = "center",  
-    yanchor = "bottom",  
-    showarrow = FALSE 
-  ), 
-  list( 
-    x = 0.38,  
-    y = 0.46,  
-    text = "Top",  
-    xref = "paper",  
-    yref = "paper",  
-    xanchor = "center",  
-    yanchor = "bottom",  
-    showarrow = FALSE 
-  ))
-```
-
 # INTRODUCTION
+
+|   League of Legends (LoL) is a popular multiplayer video game known for its ever-changing gaming strategies and various champions (characters that can be played). A foundation aspect of LoL is the tier system, which categorizes champions based on their strength and popularity in a game. In this paper, we explore the world of LoL meta and analyze the data to understand how champions are classified and how temporary changes affect their status.
+
+|   In this paper, we address two analysis questions. First, to what extent can we reproduce the tier system from MetaSRC by using clustering methods? To determine whether our groups reproduce the same MetaSRC's tiers, we examined a dataset of LoL statistics and group champions selected by their stats. This will enable us to better understand how dependable and consistent the tier system is. Second, is there a statistically significant difference in the accuracies of predicting tiers when “temporary” champions are classified? Temporary champions are individuals who are missing 1 or more patches. Our goal is to determine whether there is a significant difference in their meta by comparing their stats to those of other champions. This will help us understand how temporary champions function in the competitive environment.
+
+|   We web scraped all the data directly from metasrc.com/lol which contains stats from various League of Legends games played across many servers, including the EU/NA/KR and others. This data contains pick rates, champion victory rates, and more giving us an idea of the meta. Based on these statistics, we used RStudio to perform data analysis and looked for patterns.
+
+|   Our analysis is important to the gaming community, specifically coaches, players, and LoL enthusiasts. Understanding the tier system and how to play temporary champions helps the players. Additionally, looking at the meta can improve our understanding of the game and help us make more informed decisions about selecting the best champion based on the current meta. Throughout this paper, we go into further detail about the data we used, the results, and the conclusions of our findings. We believe this study will aid in a clearer understanding of the LoL meta and aid LoL players who want to optimize their player selection.
+
+
+# DATA
+
+|   Our dataset was obtained by web scraping data from MetaSRC which is a database of various game stats. Our data was based on season 13 of League of Legends and contained 5637 observations of various statistics from patches 1 through 24 excluding 2 which was excluded from the database for game development reasons. These statistics are included in the table below.
 
 ```{r Dataset, echo = F}
 
@@ -100,191 +59,67 @@ leaguedf$Tier = as.factor(leaguedf$Tier) %>%
 head(leaguedf, 5) %>% kbl() %>%
   kable_classic(full_width = F, html_font = "cambria")
 ```
-AFTER WORKING WITH THE DATA AND DISCUSSING THE INFORMATION WITH YOUR GROUP, YOU SHOULD DESCRIBE 2 QUESTIONS THAT ARE CREATIVE AND INNOVATIVE. YOU SHOULD EXPLAIN WHY THESE QUESTIONS ARE INTERESTING AND WHY THEY DESERVE FURTHER INVESTIGATION. I ADVISE TO THINK OF REASONS WHY AN OWNER OF THE DATA MIGHT BENEFIT FROM ANSWERS TO THESE QUESTIONS. THINK OF REASONS WHY THE WORLD MAY BE INTERESTED IN THESE QUESITONS. THE PURPOSE OF THE INTRODUCTION IS TO STATE SOME INTERESTING QUESTIONS AND DEFEND THE VALUE OF THESE QUESTIONS. THIS INTRODUCTION SHOULD BE WRITTEN IN A WAY THAT SHOULD GET THE READER EXCITED ABOUT SEEING YOUR RESULTS. THIS SHOULD BE WRITTEN IN NO MORE THAN 4 PARAGRAPHS.
 
-# DATA
+|   The Name variable shows the name of the character whose statistics are being shown with the class categorical variable describing the classifications of characters in the game based on the champions in-game stats. The Role variable describes the playstyle that a champion is usually played with in a game. Some possibilities for roles in the game include TOP, MID, SUPPORT, JUNGLE, and ADC. A good metric for determining how good a character is includes KDA which is calculated as KDA = (kills + assists)/ deaths. WinRate is the ratio of wins to losses with a selected character. PickRate is what percentage of games that character is picked and helps indicate the popularity of a champion.  BanRate is the percentage of games in which that character is banned in the pre-game champion selection process.
+|   Tier shows how good MetaSRC grades the character to be with God being the best and D being the worst. This metric was especially important for both of our analysis questions as we tried to use the data to see how accurate their tiers are at evaluating performance and see if our own tiers made through clustering are accurate. The variables Score and Trend were not used in our analysis, but come from MetaSRC as a way of continuously grading champions, as opposed to the discrete grade from trend.
 
-TempChamps
+```{r Data Plot, echo = F}
 
-```{r TempChampsPlot, echo = F, message = F, warning = F}
-tempchamps <- leaguedf %>%
-  complete(nesting(Name, Role), Patch) %>% # This explicitly finds champions who were only played in a role significantly for less than all of the patches!
-  filter(!complete.cases(.)) %>%
-  count(Name, Role)
-
-tempdf <- leaguedf %>%
-  filter(Name %in% tempchamps$Name & complete.cases(.)) %>%
-  group_by(Name, Role) %>%
-  summarize(
-    n = n(),
-    invN = 1/n,
-    meanWinRate = mean(WinRate),
-    sdWinRate = sd(WinRate),
-    meanPickBan = mean(PickBanRate),
-    sdPickBan = sd(PickBanRate), 
-    label = paste(Name, '\n', Role, sep = " ")
-  ) %>%
-  filter(n != 23) %>%
-  distinct()
-
-p1 <- tempdf %>%
-  ggplot(mapping = aes(x = meanWinRate, y = meanPickBan, alpha = invN)) + geom_point() +
-  geom_vline(xintercept = .50, color = 'red') + 
-  coord_trans(x = 'log10', y = 'log10') + 
-  labs(x = "Win Rate Average", y = "Pick Ban Rate Average", title = "Win Rate vs Pick Ban Rate\nFor Temporary champions") + 
-  scale_alpha_continuous(name = "Inverse of n", 
-                         breaks = c(0.05, 0.06, 0.125, 1),
-                         labels = c(23, 16, 8, 1),
-                         range = c(0.1, 1)) + 
-  theme(legend.position = "bottom")
+sumdf <- leaguedf %>%
+  group_by(Tier) %>%
+  summarize(avg = mean(KDA), avgpick = mean(PickRate), avgban = mean(BanRate), avgwin = mean(WinRate)) %>%
+  ungroup()
 
 
-p2 <- tempdf %>%
+p1 <- sumdf %>% 
   ggplot() + 
-  geom_histogram(mapping = aes(x = n)) + 
-  labs(x = "Patches Present", y = "Count", title = "Distribution of Temporary Champions") + 
-  theme(legend.position = "bottom")
-p1area <- patchwork::area(t = 1, b = 9, l = 1, r = 1)
-p2area <- patchwork::area(t = 1, b = 9, l = 2, r = 2)
-lgndarea <- patchwork::area(t = 10, b = 10, l = 1, r = 2)
-p1 + p2 + guide_area() + plot_layout(guides = "collect", design = c(p1area, p2area, lgndarea))
+  geom_col(mapping = aes(x = Tier, y = avg), fill = "#44AA99") + 
+  coord_cartesian(ylim = c(2, 2.5)) + 
+  labs(title = "KDA", x = "Tier", y = "Mean") + 
+  theme_minimal()
+
+p2 <- sumdf %>%
+  ggplot() + 
+  geom_col(mapping = aes(x = Tier, y = avgpick), fill = "#44AA99") + 
+  labs(title = "PickRate", x = "Tier", y = "Mean") + 
+  theme_minimal()
+
+p3 <- sumdf %>%
+  ggplot() + 
+  geom_col(mapping = aes(x = Tier, y = avgban), fill = "#44AA99") + 
+  labs(title = "BanRate", x = "Tier", y = "Mean") + 
+  theme_minimal()
+
+p4 <- sumdf %>%
+  ggplot() + 
+  geom_col(mapping = aes(x = Tier, y = avgwin), fill = "#44AA99") + 
+  labs(title = "WinRate", x = "Tier", y = "Mean") + 
+  coord_cartesian(ylim = c(0.48, 0.52)) + 
+  theme_minimal()
+
+p1 + p4 + p2 + p3 + plot_layout(ncol = 2, nrow = 2, axis_titles = "collect") + plot_annotation("Statistics grouped by Tier", caption = "All y axes are on different scaled, but they\n all represent means of a certain statistic.")
 ```
 
-
-
-```{r, message = F, warning = F, echo = F, eval = F}
-leaguedf %>%
-  select("Name", "PickBanRate", "WinRate", "Role", "RoleRate", "Class", "Patch") %>%
-  filter(!(Class == "NULL")) %>%
-  group_by(Role) %>%
-  group_map( ~ plot_ly(data = .,
-      x = ~ PickBanRate,
-      y = ~ WinRate,
-      color = ~ Class,
-      text = ~ Name,
-      frame = ~ Patch, 
-      hoverinfo = "text",
-      type = "scatter",
-      mode = "markers", 
-      marker = list(size = ~ RoleRate*5)
-      ), .keep = TRUE) %>%
-  subplot(nrows = 2, shareX = TRUE, shareY=TRUE, margin=0.03) %>%
-  layout(showlegend = FALSE, title = 'Pick Ban Rate vs. Win Rate by Patch seperated by Role',
-         plot_bgcolor='#e5ecf6', 
-         xaxis = list( 
-           zerolinecolor = '#ffff', 
-           zerolinewidth = 2, 
-           gridcolor = 'ffff'), 
-         yaxis = list( 
-           zerolinecolor = '#ffff', 
-           zerolinewidth = 2, 
-           gridcolor = 'ffff'),
-         margin = 0.07) %>%
-  layout(annotations = annotations)
-
-```
-
-
-
-```{r CorrelationFunc, echo = F}
-
-
-MakeCorrelationDf <- function(varname, outputname = varname) {
-  head(leaguedf)
-  tempdf <- leaguedf %>%
-    pivot_wider(id_cols = c("Name", "Role"), names_from = "Patch", values_from = varname) %>%
-    mutate(ID = paste(Name, Role, sep = ' ')) %>%
-    select(-c(1, 2)) %>%
-    na.omit()
-  NameList <- tempdf$ID
-  
-  tempdf <- tempdf %>%
-    t() %>%
-    as_tibble() %>%
-    filter(row_number() < n()) %>%
-    mutate_if(is.character, as.numeric)
-
-  
-  colnames(tempdf) <- NameList
-  tempdf <- as_tibble(cor(tempdf))
-  rownames(tempdf) <- colnames(tempdf)
-  tempdf <- tempdf %>%
-    rownames_to_column(var = "Champion1") %>%
-    gather(key = "Champion2", value = !!paste(outputname, "Correlation", sep = ''), -Champion1) %>%
-    filter(!(.by = Champion1 == Champion2))
-  
-  return(tempdf)
-}
-```
-
-
-CORRELATION BOXPLOT
-
-```{r PbrCorrelation, echo  = F, warning = F}
-PbrCorrelation <- MakeCorrelationDf("PickBanRate", "Pbr") %>%
-  group_by(Champion2) %>%
-  arrange(PbrCorrelation) %>%
-  mutate(label = case_when(
-    row_number() <= 2 ~ str_to_title(str_replace(Champion1, '\\.', ' ')),
-    row_number() > n() - 2 ~ str_to_title(str_replace(Champion1, '\\.', ' ')), # This adds a Space into the name where the . is  and uncapitalizes the second role
-    Champion2 == "Tahm Kench.Support" & PbrCorrelation > 0.68 ~ "Senna Support", # This is an outlier so labeling is justified, especially since it helps show the part of the plot
-    TRUE ~ as.character(NA)
-  )) 
-
-PbrCorrelation %>% filter(Champion2 %in% c("Tahm Kench Support", "Senna Support", "Ashe Adc")) %>% 
-  ggplot(mapping = aes(x=Champion2, y = PbrCorrelation)) + 
-  geom_boxplot() + 
-  ggtitle("PBR Correlation Boxplot")+ 
-  scale_x_discrete(labels = c("Ashe Adc", "Senna Support", "Tahm Kench Support")) + 
-  labs(x = "", y = "Pick Ban Rate Correlation Coefficient", caption = "Minimum and Maximum corelation coefficients are annotated, as well as Senna Support for Tahm Kench Support in order\n to best visualize how the strength of certain counters, replacements, and synergies effect Pick Ban Rate.")  + 
-  geom_text(aes(label = label), na.rm = TRUE, hjust = -0.1, size = 3, check_overlap = T) 
-```
-
-
-Volatility Overview
-```{r Std winRate, echo = F, message = F}
-leaguedf %>% 
-  group_by(Name) %>% 
-  summarise(Mean_pick=mean(PickRate, na.rm = TRUE), Std_pick=sd(PickRate, na.rm=TRUE), Mean_win=mean(WinRate, na.rm = TRUE), Std_win=sd(WinRate, na.rm=TRUE)) %>% 
-  arrange(desc(Mean_pick)) %>% 
-  ggplot(aes(Mean_pick, Std_win)) + geom_point() + labs(x = "Mean Pick Rate", y = "Standard Deviation Win Rate", title = "Mean PickRate and Volatility of WinRate") + 
-  coord_trans(x = 'log10', y = 'log10') + 
-  geom_smooth(aes(x = Mean_pick, y = Std_win), method = 'lm', se = F) # THIS LOOKS NON LINEAR BUT IT IS LINEAR, ITS JUST ON A LOG SCALE!!!!
-
-```
-
-
-
-```{r, fig.height = 15, eval = F, echo = F}
-plot1 <- leaguedf %>%
-  filter(Name %in% c("Fiora", "Darius", "Garen", "Aatrox", "Jax"), Role == "Top") %>%
-  ggplot() + geom_count(aes(x = as.factor(Patch), y = Name, size = PickRate, color = Name)) + labs(x = "Patch", y = "Name", title = "Pick Rate")
-
-plot2 <- leaguedf %>%
-  filter(Name %in% c("Fiora", "Darius", "Garen", "Aatrox", "Jax"), Role == "Top") %>%
-  ggplot() + geom_count(aes(x = as.factor(Patch), y = Name, size = BanRate, color = Name)) + labs(x = "Patch", y = "Name", title = "Ban Rate")
-
-plot3 <- leaguedf %>%
-  filter(Name %in% c("Fiora", "Darius", "Garen", "Aatrox", "Jax"), Role == "Top") %>%
-  ggplot() + geom_count(aes(x = as.factor(Patch), y = Name, size = WinRate, color = Name)) + labs(x = "Patch", y = "Name", title = "Win Rate")
-
-(plot1 / plot2/ plot3) + plot_annotation(title = "Analysis of Staple Top Champions")
-
-```
-IN LESS THAN 6 PARAGRAPHS, YOU SHOULD DESCRIBE THE DATA USED TO ANSWER THE QUESTIONS. YOU SHOULD EXPLAIN WHERE THE DATA ORIGINATED. FOR EXAMPLE, IT IS GOOD TO KNOW WHO COLLECTED THE DATA. JUST BECAUSE THE DATA CAME FROM KAGGLE, DOESN'T MEAN KAGGLE.COM COLLECTED THE DATA. GIVE AN IN-DEPTH DESCRIPTION OF THE SPECIFIC VARIABLES IN THE DATA REQUIRED TO ANSWER YOUR QUESTIONS. YOU SHOULDN'T DISCUSS ALL VARIABLES IN THE DATA IF YOU DIDN'T USE ALL VARIABLES IN THE DATA. YOU SHOULD EXPLAIN WHAT EACH OBSERVATION REPRESENTS (I.E. PEOPLE, SCHOOLS, STATES, CITIES, PATIENTS FROM A SPECIFIC HOSPITAL). WHAT IS THIS A SAMPLE OF? HOW MANY OBSERVATIONS DO YOU HAVE? AFTER READING THIS SECTION, THE READER SHOULD CLEARLY UNDERSTAND THE SOURCE AND CONTENT OF THE DATA YOU PLAN ON UTILIZING TO ANSWER YOUR QUESTIONS THAT YOU PROPOSED IN THE INTRODUCTION. AT LEAST ONE, DESCRIPTIVE TABLE AND AT LEAST ONE FIGURE SHOULD BE USED HERE TO HELP THE READER UNDERSTAND WHAT THE DATA LOOKS LIKE WITHOUT SEEING THE ENTIRE DATASET. IN ALL FIGURES AND TABLES, ONLY THE VARIABLES OF INTEREST SHOULD BE USED.
+|    This figure shows how generally the tiers are correlated with characters that perform better in the game. This is because KDA is often used as a metric for determining how well a specific character did in a game. However, this plot does show discrepancies as in this case, the S rank tier has a higher KDA than the god tier which does not . This is precisely the goal of our analysis to evaluate and perhaps create better tiers for characters.
 
 # RESULTS
 
 ```{r Pallettes, echo = F}
 KMeansPalette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00")
 TierPalette <- c("#332288", "#117733", "#44AA99", "#88CCEE", "#DDCC77", "#CC6677")
-
-
 ```
 
-## Clustering Analysis
+## Part 1: Clustering Analysis
 
-KMeans Analysis
+
+|  The first idea that this paper aims to investigate is to what extent MetaSRC tiers correspond to groups generated by K-means clustering. We specifically choose K-Means to compare MetaSRC tiers to as (heuristically) tiers should be centered around some point, if one wanted to know whether or not a champion was truly “God” tier, then one should have some understanding of where this means the champion stands in terms of statistical features (`PickRate`, `BanRate`, `WinRate`, …). K-means clustering works similarly to a K-nearest neighbors prediction algorithm, except the end goal is different. 
+
+|  In K-means, the input is: the number of clusters that should be outputted ($k$), a distance metric (for example $d(x,y) = \sqrt{\sum_{i=1}^n x_i^2 + y_i^2}$ which is commonly known as Euclidean distance) , and the dataset without any target variables (the variable to be predicted). Then, the algorithm creates groups, $C_1, \ldots, C_k$, with the condition that:
+
+  1) each observation in the dataset belongs to at least one group ($\bigcup_{i=1}^k C_i = D$ where $D$ is the dataset) and 
+  2) each observation belongs to at most one group ($\forall i \neq j: C_i \cap C_k = \emptyset$). 
+  
+|  In order to do this most efficiently, it begins by randomly sampling the dataset and assigning each observation a value from $1$ to $k$. It then performs a loop where it minimizes the average distance to the centroid of the group (a point which is the mean of each variable in the cluster). As a result of this, it should be noted that the K-means algorithm only accepts numeric variables, categorical variables in our example (Role and Class are both used) were one-hot encoded to solve this, before the data is then normalized in order to reduce potential bias from variables with larger standard deviations. Our method uses all variables present in the dataset excluding Name, PickBanRate, Tier, Score, and Trend. We chose to remove these variables as they are either unique identifiers, not representative of collected data (Tier, Score, and Trend are all from metaSRC directly), or repetitive (PickBanRate is `PickRate` + `BanRate`). We also numbered the clusters in terms of descending mean `RoleRate`, as that can be seen to follow some sort of a similar trend with metaSRC tiers. This helps in terms of visualization and understanding the data, as you can see below.
 
 ```{r KMeans, fig.height = 10, fig.width = 10, warning = F, echo = F}
 #Cluster Analysis with K-Means
@@ -472,14 +307,8 @@ leaguedf %>%
   kbl() %>%
   kable_classic(full_width = F, html_font = "Times New Roman")
 ```
-- Temporary Names for groups:
-  - 1: Below Average win rate champs, possibly overpicked
-  - 2: Above Average win rate champs, generally underpicked
-  - 3: very low win rate champs
-  - 4: highly picked champs
-  - 5: Yuumi <3
 
-```{r, message = F, echo = F, eval = F, echo = F}
+```{r, message = F, echo = F, eval = T, echo = F}
 Propdf <- leaguedf %>%
   group_by(Tier, Cluster) %>%
   summarize(count = n()) %>%
@@ -493,12 +322,67 @@ heatplot <- Propdf %>%
   geom_tile(mapping = aes(x = Tier, y = Cluster, fill = Proportion)) & 
   theme_minimal()
 
-heatplot & plot_annotation(title = "Similarity Heatmap", subtitle="This should feel close to a confusion matrix")
+heatplot & plot_annotation(title = "Similarity Heatmap")
 ```
 
+|   In our example, from the K-means algorithm, we can see that the overall similarities between most of the tiers (compared to clusters) are minimal. However, it is interesting to note that the similarities between cluster $1$ and God tier, as well as cluster $6$ and D tier, are much higher than any other similarity between the two groups. This helps us understand that these two tiers are closer to being well-defined within the feature space, and we will likely see that our model will have a higher accuracy when it comes to predicting these tiers as opposed to the others. Another interesting takeaway is the way that `RoleRate` has a much larger gap between the clusters as opposed to the metaSRC tiers, which could be a sign that further investigation should look at subsets of roles, and possibly patch as well. 
+|   From our similarity heatmap, we can see that God and D tier have high amounts of overlap with the clusters with the highest mean RoleRate (1) and lowest mean RoleRate (6) respectively. This is interesting, because it tells us that RoleRate can help us to differentiate from the highest and lowest tiers, but not much beyond that. It also tells us that our model in the next part will likely perform better on God and D tiers then it does on the other 4 tiers, because these tiers have more a natural, data based boundaries.
+	
+	
 ## Part 2: Classification Exploration
 
+|   For the second question, we want to understand how our model performs based on temporary and nontemporary champions.    We define a temporary champion to be any champion who is not present in a specific role for all 23 patches (`df %>% group_by(Name, Role) %>% tally() %>% filter(n < 23)`). For example, Ivern is present in the Jungle role for 23 patches, so these observations would be considered nontemporary, but Ivern is present in the Top role for 22 patches, so only these 22 patches would be considered temporary.
+
+```{r TempChampsPlot, echo = F, message = F, warning = F}
+tempchamps <- leaguedf %>%
+  complete(nesting(Name, Role), Patch) %>% # This explicitly finds champions who were only played in a role significantly for less than all of the patches!
+  filter(!complete.cases(.)) %>%
+  count(Name, Role)
+
+tempdf <- leaguedf %>%
+  filter(Name %in% tempchamps$Name & complete.cases(.)) %>%
+  group_by(Name, Role) %>%
+  summarize(
+    n = n(),
+    invN = 1/n,
+    meanWinRate = mean(WinRate),
+    sdWinRate = sd(WinRate),
+    meanPickBan = mean(PickBanRate),
+    sdPickBan = sd(PickBanRate), 
+    label = paste(Name, '\n', Role, sep = " ")
+  ) %>%
+  filter(n != 23) %>%
+  distinct()
+
+p1 <- tempdf %>%
+  ggplot(mapping = aes(x = meanWinRate, y = meanPickBan, alpha = invN)) + geom_point() +
+  geom_vline(xintercept = .50, color = 'red') + 
+  coord_trans(x = 'log10', y = 'log10') + 
+  labs(x = "Win Rate Average", y = "Pick Ban Rate Average", title = "Win Rate vs Pick Ban Rate\nFor Temporary Champions") + 
+  scale_alpha_continuous(name = "Inverse of n", 
+                         breaks = c(0.05, 0.06, 0.125, 1),
+                         labels = c(23, 16, 8, 1),
+                         range = c(0.1, 1)) + 
+  theme(legend.position = "bottom")
+
+
+p2 <- tempdf %>%
+  ggplot() + 
+  geom_histogram(mapping = aes(x = n)) + 
+  labs(x = "Patches Present", y = "Count", title = "Distribution of Temporary Champions") + 
+  theme(legend.position = "bottom")
+p1area <- patchwork::area(t = 1, b = 9, l = 1, r = 1)
+p2area <- patchwork::area(t = 1, b = 9, l = 2, r = 2)
+lgndarea <- patchwork::area(t = 10, b = 10, l = 1, r = 2)
+p1 + p2 + guide_area() + plot_layout(guides = "collect", design = c(p1area, p2area, lgndarea))
+```
+
+|   We want to investigate this question because temporary champions are one of the main reasons for tier lists to exist, meta champions that have high pick ban rates and sporatic win rates are often evaluated by casual players in order to understand whether or not they are viable. Our paper focuses on the possible difference between these two groups, is there a significant difference in the way that temporary champions are classified that would matter to a potential player. From the figure above, it's evident that there is no clear grouing for these champions, they are distributed randomly, which makes it an excellent test group because we arent testing just one small section of our model. 
+
+
 ### Feature Selection
+
+|   First, the feature space should be reduced as the original dimensions of the dataset (around 200) are too high for a meaningful conclusion from reasonable computational power to be done from. To do this, this paper employs a two-step technique: A stepwise regression to determine the optimal number of features for each tier, and a Boruta model to determine which features are most important to the dataset for all six tiers. 
 
 ```{r, eval = F, echo = F}
 PCAdf <- leaguedf %>%
@@ -556,7 +440,6 @@ eigFrame %>%
 
 ```
 
-Based on the PCA Analysis, we can maybe see that we want 7-9 variables, but we don't know. Please ask!!!!
 
 ```{r Stepwise Regression, fig.height = 10, fig.width = 10, warning =  F, echo = F}
 Stepdf <- leaguedf %>%
@@ -622,10 +505,11 @@ plot <- Reduce('+', plist)
 plot + plot_annotation(title = "BIC Analysis with Stepwise Regression faceted by Tier", subtitle = "Vertical Line at x=8") + plot_layout(axis_titles = "collect")
 ```
 
-We can see that around $8$ feature for each tier is optimal or near optimal, so we want to find 7 variables to use. To do this, we use a Boruta model, which can naturally deal with high dimensional categorical variables in an efficient way for multi-class regressions. A boruta model generates a decision tree in a specific manner and sees how inclusion and emphasis of different variables differently affects the accuracy of a random forest model. Because of this, it is very good at feature selection for Random Forest models, of which the Ranger model which we use is a subset of. Beyond that, it measures importance by gathering Z scores of mean decrease accuracy measure (DAM). 
+|   Stepwise regression works by fitting multiple linear models algorithmically in order to determine the point at which adding extra features to the model results in minimal payoffs, and removing features does not significantly harm the model. Specifically, it uses “BIC”, which is calculated by the formula $k \ln (n) - 2 \ln (\hat{L})$. Here, $\ln (\hat{L})$ is the natural logarithm of the maximum likelihood estimate, which corresponds to the idea of how likely you are to see the data based on the predictions from this model. In addition, $k$ is the number of features in the model, and $n$ is the number of observations the model is trained on. This is all to say that the value increases as the number of features increases and the model's "correctness" decreases, which is why we look for the lower values that the model finds.
+|   From our stepwise regression, we can see that 8 features (denoted by the vertical line) is likely to be optimal, since any extra features beyond this point results in minimal payoffs. 
 
 
-```{r, eval = T, echo = F}
+```{r Boruta Model, eval = T, echo = F}
 
 #Feature Selection
 
@@ -636,10 +520,12 @@ plot(boruta, las = 2, cex.axis = 0.7)
 
 
 
-We wamt 7 features, and knowing that Role woudl account for 5 in the stepwise regressoin, we can see that WinRate, PickRate, Role, and BanRate are the 4 most likely to be influential variables, and they would make up 8 total features, which is only slightly above what we wanted.
+|   Using our target feature count from the stepwise regression, we turn to a Boruta model. This technique creates ‘shadow variables’ which are randomly sorted copies of the original vectors in the dataframe, and then a `RandomForest` model is trained on the dataset with shadow features added. From this, it looks to see the importance of each feature (which is calculated with complex mathematical formulas such as Impurity) and compares the most important shadow feature with the importance of all the original features. In this way, we see whether or not any variable performs more effectively than essential randomness, which can help to determine how useful it will be in the end. Our Boruta model tells us that `WinRate`, `PickRate`, `Role`, and `BanRate` are the four most important variables, but since `Role` account for 5 features (Top, Jungle, Mid, ADC, Support) we have $8$ total features accounted for within these $4$ variables.
+
 
 ### Cross Validation
-We choose K-Fold over LOOCV for cross validation because 1) K-Fold requires much less computation power and time and this already took 5 hours, and 2) K-Fold can better estimate model accuracy's for machine learning by reducing bias variance, i.e. training on a smaller set will result in less overfitting. K-Fold cross validation functions as: Partition the dataset $S$ into $k$ sets, $S_1, S_2, \ldots, S_k$, loop over $1$ to $k$ with $i$ as the counter, next train each model on the data set $S - S_i$, then test each model on the sample $S_i$ and record the accuracy. When this is finished we compare the mean of each accuracy to best understand the overall standard deviation.
+
+|   After choosing the features, we then train different models and use K-Fold cross validation to determine which is the best. K-Fold cross validation works by splitting the dataset into $k$ disjoint and equally sized samples. We then train each model on the dataset without sample $i$, before testing the model's metric on just sample $i$. This is repeated once for each sample. K-Fold cross validation is a powerful tool to understand how well the model captures the trends within the dataset, because it is trained on different samples each time, and tests every observation. We chose K-Fold cross validation over other methods like Leave-one-out cross validation (LOOCV) because of the computation power available for this project. Additionally, we choose $k=10$ samples for the same reason.  
 
 ```{r, echo = F}
 
@@ -719,6 +605,34 @@ for (feature in featurecombs) {
   } 
 ```
 
+
+```{r empty model training, echo = F, eval = F}
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+for (i in 1:10) {
+    traindf <- leaguedf %>%
+      filter(!(sample == i)) %>%
+      select(Tier)
+    testdf <- leaguedf %>%
+      filter(sample == i) %>%
+      select(Tier)
+    
+    
+    #Empty model
+    p = traindf %>% count(Tier)
+    mostcommon <- slice_max(p, n)
+    percent = mean(testdf$Tier == mostcommon$Tier)
+    crossdf <- crossdf %>%
+      rbind(list(sample = i, svm_radial = percent, svm_linear = percent, ranger = percent, WinRate = 0, PickRate =0, BanRate =0, Role = 0))
+}
+
+
+```
+
+
 ```{r, echo  = F, message = F}
 crossdf <- read_csv('crossdf.csv')
 ```
@@ -727,7 +641,7 @@ crossdf <- read_csv('crossdf.csv')
 write_csv(crossdf, "crossdf.csv")
 ```
 
-```{r, echo = F}
+```{r CrossDF Conversion, echo = F, message = F}
 
 convert_func <- function(WinRate, PickRate, BanRate, Role) {
   ans <- ''
@@ -761,7 +675,10 @@ crossdf <- crossdf %>%
   group_by(Model, Feature) %>%
   summarize(sd = sd(Accuracy), Accuracy = mean(Accuracy)) %>%
   ungroup() %>%
-  mutate(featurenum = str_count(Feature, pattern = ' '))
+  mutate(featurenum = str_count(Feature, pattern = ' '),
+         Model = case_when(
+           featurenum == 0 ~ "Empty Model",
+           T~ Model))
 
 
 crossdf$Feature <- crossdf$Feature %>%
@@ -770,6 +687,8 @@ crossdf$Feature <- crossdf$Feature %>%
 
 
 ```{r BarChart, fig.height = 10, fig.width=10, echo = F}
+
+emptyline = geom_hline(yintercept = 0.2404, linetype = "dashed", color = "#61DC1E")
 
 customlegend <- scale_fill_manual(values = c("svm_linear" = "#648FFF", "svm_radial" = "#DC267F","ranger" = "#FFB000"),
                                    labels = c("svm_linear" = "SVM Linear", "svm_radial" = "SVM Radial","ranger" =  "Ranger"))
@@ -781,7 +700,7 @@ p1 <- crossdf %>% filter(featurenum == 1) %>%
   theme_minimal() + 
     labs(x = "Features", y = "Accuracy", title = "1 Feature Models") + ylim(0, 1) + customlegend+
   scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) + 
-  theme(legend.position = "none")
+  theme(legend.position = "none") + emptyline
   
 p2 <- crossdf %>% filter(featurenum == 2) %>%
   na.omit() %>%
@@ -789,7 +708,7 @@ p2 <- crossdf %>% filter(featurenum == 2) %>%
   geom_bar(mapping = aes(x = Feature, y = Accuracy, fill = Model), stat = "identity", position = "dodge") + 
   theme_minimal() + 
     labs(x = "Features", y = "Accuracy", title = "2 Feature Models") + ylim(0,1  ) + customlegend+
-  scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) + emptyline
 
 p3 <- crossdf %>% filter(featurenum == 3) %>%
   na.omit() %>%
@@ -797,7 +716,7 @@ p3 <- crossdf %>% filter(featurenum == 3) %>%
   geom_bar(mapping = aes(x = Feature, y = Accuracy, fill = Model), stat = "identity", position = "dodge") + 
   theme_minimal() + 
     labs(x = "Features", y = "Accuracy", title = "3 Feature Models") + ylim(0,1 ) + customlegend + 
-  scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) + emptyline
 
 p4 <- crossdf %>% filter(featurenum == 4) %>%
   na.omit() %>%
@@ -805,11 +724,22 @@ p4 <- crossdf %>% filter(featurenum == 4) %>%
   geom_bar(mapping = aes(x = Feature, y = Accuracy, fill = Model), stat = "identity", position = "dodge") + 
   theme_minimal() + 
     labs(x = "Features", y = "Accuracy", title = "4 Feature Models") + ylim(0,1) + customlegend+
-  scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) + emptyline
 
-pw <- (p1 + p2) / (p3 + p4) + plot_layout(guides = "collect", axis_titles = "collect") + plot_annotation(title = "Models and Mean Cross-Validated Accuracy")
+p1 + p2 + p3 + p4 + plot_layout(guides = "collect", axis_titles = "collect", nrow = 2, ncol = 2) + plot_annotation(title = "Models and Mean Cross-Validated Accuracy", caption = "Horizontal Line represents the empty model accuracy, at 0.2404")
 
-pw
+
+
+```
+
+
+
+|    From the bar chart, we can see a few things: first, the inclusion of Pick- and WinRate is the most influential on the success of the model, which matches what our Boruta model found. Next, we can see that the models that contain the most variables are the most accurate, except that all models trained on WinRate, BanRate, and Role perform  worse than a SVM model trained on just PickRate. 
+
+|   We next compare the models to the highest performing model to see if the increase in accuracy is statistically significant (we choose to give preference to SVM models over the Ranger, as the Ranger is less human readable than an SVM, and is often hard to determine if it’s overfitted. To do this, we perform a comparison with mean accuracy from all $10$ cross-validation folds, and use Welsh’s T-test to find P-Values at a statistically significant level (chosen to be $p = 0.05$). We use the following formula: $$t^* = \frac{\mu_0 - \mu_1}{\sqrt{\frac{\sigma_0^2}{n_0} + \frac{\sigma_1^2}{n_1}}}$$ 
+|   Where $\sigma_0^2$, $n_0$, and $\mu_0$ are the variation, sample size, and mean accuracy for the ranger model with all 4 features, while $\sigma_1^2$, $n_1$, and $\mu_1$ are the variation, sample size, and mean accuracy for the model in question champions. we specifically choose our null hypothesis to be that the ranger model with 4 features preforms better than the other model, and our alternative hypothesis to be that the ranger model preforms at the same level or worse $(\mu_1 \leq \mu_0)$. We choose a significance level of $0.05$, as it is standard.
+```{r Model Comparison Chart, echo = F}
+
 
 bestModels <- crossdf %>% na.omit() %>%
   group_by(Model) %>%
@@ -824,38 +754,18 @@ bestModels <- crossdf %>% na.omit() %>%
   select(-Feature, -featurenum, -sd) %>%
   ungroup()
 
-tab <- bestModels %>% formattable(
-  list(`WinRate` = formatter("span",
-                        x ~ icontext(ifelse(x > 0, "ok", "remove"), ifelse(x > 0, "", "")),
-                        style = x ~ style(color = ifelse(x < 1, "red", "green"))),
-       `PickRate` = formatter("span",
-                        x ~ icontext(ifelse(x > 0, "ok", "remove"), ifelse(x > 0, "", "")),
-                        style = x ~ style(color = ifelse(x < 1, "red", "green"))),
-       `BanRate` = formatter("span",
-                        x ~ icontext(ifelse(x > 0, "ok", "remove"), ifelse(x > 0, "", "")),
-                        style = x ~ style(color = ifelse(x < 1, "red", "green"))),
-       `Role` = formatter("span",
-                        x ~ icontext(ifelse(x > 0, "ok", "remove"), ifelse(x > 0, "", "")),
-                        style = x ~ style(color = ifelse(x < 1, "red", "green"))),
-       `Accuracy` = formatter("span", x ~ percent(x)))
-)
 
-```
-
-```{r Model Comparison Chart, echo = F}
-bestModels %>% slice_max(Accuracy, n=6) %>%
+bestModels %>% group_by(Model) %>% slice_max(Accuracy, n=2) %>%
+  unique() %>% arrange(desc(Accuracy)) %>%
+  ungroup() %>%
   mutate(meanDiff = max(Accuracy) - Accuracy, 
          z = meanDiff/(sqrt(`Standard Deviation`^2/10 + 0.0161^2/10)), 
-         pval = round(pnorm(q=z, lower.tail=F), 4)) %>%
-  rename(`Z Score` = z,`Distance from $\\mu_0$` =  meanDiff, `P Value` = pval) %>%
+         pval = round(pt(q=z, df = 9, lower.tail=F), 4)) %>%
+  rename(`T statistic` = z,`Distance from $\\mu_0$` =  meanDiff, `P Value` = pval) %>%
   kbl(caption = "Model Comparisons with $\\mu_0 = 0.7504$") %>%
   kable_classic(full_width = F, html_font = "cambria")
-
 ```
-
-Hence, our Ranger model is NOT better that our Radial SVM model with all features within a p=0.05, however, all other models are. This is happy! Because we have projected our data set down by a lot and reduced the amount of variables we need and whatnot. WE can better visualize this now using 
-
-### Hypertuning and Fitting Model
+|   We can see from the table that the only model that has a p-value above $0.05$ is the SVM radial with all features. This means that the increase in accuracy between the two models cannot be said to be non-random, and we don’t have evidence to conclude that our ranger model outperforms the SVM radial model. Therefore, we choose our SVM radial model, for the reasons mentioned above.
 
 ```{r, eval = F, echo = F, echo = F}
 #Model Fitting
@@ -1165,9 +1075,30 @@ htmltools::tags$iframe(srcdoc = doc,
             scrolling = 'no')
 ```
 
-### TempChamps Analysis
+```{r Heatmap, echo = F}
+pred = predict(svmrad_fit, leaguedf)
+cm <- confusionMatrix(pred, leaguedf$Tier, dnn = c("Prediction", "Actual"))
 
-```{r TempChamps Tables}
+plt <- as.data.frame(cm$table) %>%
+  group_by(Actual) %>%
+  mutate(Percent = Freq / sum(Freq))
+
+cm_plot <- ggplot(plt, aes(Prediction,Actual, fill=Percent)) +
+        geom_tile() + geom_text(aes(label=Freq)) +
+        scale_fill_gradient(low="white", high="#009194") +
+        labs(x = "Prediction",y = "Actual", title = "Confusion Matrix", guide = "Precision") + theme_minimal() + theme(legend.position = "bottom")
+
+cm_plot
+```
+
+|   Now that we have chosen a model, we train a new one fitted to the entire dataset to be used in our analysis.
+
+|   Next, we want to visualize the model to see 1) if there is evidence of major overfitting and 2) get a better understanding of how the model works and trends within our dataset. The contour plots pictured above show the boundary lines that our model draws between tiers, which partitions the feature space into mutually exclusive sections that it uses to classify each observation based on where it falls in the feature space. To best visualize this, we faceted the model by Role, and then created a unique plot for each tier. Our visualization shows us that there are some examples of overfitting, strange edges appearing out of certain values (for example towards the top of BanRate in some plots we can see that the models get very curved because its over fitted towards the outliers). We can also see that the ADC role has nearly linear lines drawn, which can show us part of the reason why the linear SVM models perform so well, while other roles tend to be more curved, hence why the radial model had better overall fits.
+|   The next figure is a confusion matrix, which tells us where our model goes right and wrong in it's predictions. To create this, we predict the tiers of every observation in the original dataset using our model which is trained on the full dataset, and we then plot the counts of each prediction so that the actual tier is on the Y axis and the predicted tier is on the X axis. For example, if a specific observation is categorized as A Tier, and our model predicts it to be God Tier, it would go in the slot with God on the X axis and A on the Y axis (the box is labeled 1). From this chart, we can see that our model struggles the most with predicting B and C tier champions correctly, but there are also large numbers of mispredicted champions in A tier and S tier, often confused with each other. As expected from the K means analysis, we can see that the model predicts God Tier very well, however, it does not predict D tier well at all, which is surprising. This could point to the idea that features that were left out were important in the prediction of D tier champions. 
+
+### Statistical Analysis
+
+```{r TempChamps Tables, echo = F}
 #Special Analysis just for TempChamps
 #TODO: Fix table format so it isn't disgusting
 leaguedf$Pred_svmrad = predict(svmrad_fit, leaguedf)
@@ -1177,7 +1108,8 @@ pretable <- leaguedf %>%
   ungroup()  %>%
   mutate(Temp = n < 23, correct = Tier == Pred_svmrad) %>%
   group_by(Temp) %>%
-  summarize(Acc = mean(correct), n = n(), sd = sd(correct))
+  summarize(Acc = mean(correct), n = n(), sd = sd(correct)) %>%
+  rename(Temporary = Temp, Accuracy = Acc, `Sample Size` = n, `Standard Deviation` = sd)
 
 #Assume that the true probablility is correct. Then, we have H0 as Temp >= NonTemp, and H1 as Temp < NonTemp.
 
@@ -1185,19 +1117,33 @@ table <- tibble(
   NonTemporary = pretable[[1,2]], Temporary = pretable[[2,2]], NonTemporaryN = 4876, TemporaryN = 761, sdTemporary = pretable[[1,4]], sdNonTemporary = pretable[[2,4]]
 ) %>%
   mutate(diff  = NonTemporary - Temporary, z = diff/ (sqrt(sdTemporary^2 / TemporaryN + sdNonTemporary^2 / NonTemporaryN)), p = pnorm(q = z, lower.tail = F)) %>%
-  kbl() %>%
-  kable_classic()
-
+  rename(`Temporary Mean ($\\mu_1$)` = Temporary, `Non Temporary Mean ($\\mu_0$)` = NonTemporary, `Number of Temporary` = TemporaryN, `Number of NonTemporary` = NonTemporaryN, `Standard Deviation Temporary` = sdTemporary, `Standard Deviation Non Temporary` = sdNonTemporary, Difference = diff, `Z Score` = z, `P Value` = p) 
+t = table[['Z Score']]
+p = table[['P Value']]
+diff = table[["Difference"]]
+ 
 pretable %>%
   kbl() %>%
-  kable_classic
-table
+  kable_classic(full_width = F, html_font = "cambria")
 ```
 
-# CONCLUSION
-IN LESS THAN 4 PARAGRAPHS, YOU SHOULD RESTATE YOUR QUESTIONS ALONG WITH YOUR CONCLUSIONS. THE PURPOSE OF THIS SECTION IS TO SUMMARIZE YOUR FINDINGS (SHORT), DEFEND THE IMPORTANCE OF YOUR RESULTS IN THE REAL WORLD (LONG), AND PROVIDE A ROADMAP FOR OTHERS TO CONTINUE THIS WORK (LONG). ARE YOUR CONCLUSIONS WHAT YOU EXPECTED OR UNUSUAL? WHY SHOULD SOMEONE CARE ABOUT THESE RESULTS? HOW COULD THESE RESULTS BE USED IN THE REAL WORLD? YOU SHOULD PROVIDE IDEAS ABOUT FUTURE DIRECTIONS ON WHERE YOUR MODELING COULD POSSIBLY BE IMPROVED. ARE THERE ANY METHODS YOU DIDN'T USE THAT MAY WORK BETTER? IS THERE DATA YOU DIDN'T HAVE ACCESS TO THAT MAY BE USEFUL IN THIS DATA ANALYSIS? 
+|   We create the null hypothesis that the accuracy of temporary champions is greater than or equal to the accuracy of non temporary champions $(\mu_1 \geq \mu_0)$. Our alternative hypothesis is that the accuracy of temporary champions is less than the accuracy of nontemporary champions $(\mu_1 < \mu_0)$. We choose $p \leq 0.01$ to be a statistically significant measure, as we have large sample sizes with low variance. 
 
-```{r, eval=FALSE}
+|   The difference between the two accuracy's is large, at `r round(diff, 3)`. To test for statistical significance, we use a Welsh's two-sample T test as described in the cross validation subsection. The T-statistic is `r round(t, 3)`, which corresponds to a P-value of $4 \cdot 10^{-6}$, and is statistically significant at the $0.01$ level. Therefore, we fail to reject the reject the null hypothesis, and conclude that our model performs worse on temporary champions compared to nontemporary champions.
+
+# CONCLUSION
+
+|   The first question is, “Can we see how metasrc produces the tiers of champions through clustering methods”? We specifically used k-means clustering with 6 centroids and Euclidean distance as the metric for the “closeness” of observations. What we found is that the metasrc’s tiers are rather sporadic. We found that only the “God” and “D” tiers, the best and the worst tiers share similarities with the k-means clusters. Furthermore, the role rate between tiers produced by k-means clusters is a lot more spread out than that of metasrc. The second question is whether the accuracy of predicting the tiers of temporary champions and nontemporary champions is significantly different. We used stepwise regression and Boruta for feature selection. From stepwise regression, we learned that 8 is an optimal number of features to make a model because adding more features will result in diminishing returns. Boruta decided that `WinRate`, `PickRate`, `Role`, and `BanRate` are the most important features, with `Role` being “Top”, “Jungle”, “Mid”, “ADC”, and “Support.” There are 8 features in total. With these features, we decided that an SVM radial model is the best model after cross-validation compared to SVM linear and ranger. Our model accurately predicts the tier of the combination of champions and roles 74.22% of the time. The best ranger performs slightly better at a 75.04% accuracy at an immense cost of computational power and difficulty to visualize. There is a significant difference between the accuracy of predicting the tier of temporary champions (70.4%) and that of non-temporary champions (77.7%).		
+
+|   K-means clustering shows that Metasrc’s tiers are somewhat sporadic, which is unusual for metrics such as win rate and pick rate to not fully classify the champions into tiers the way Metasrc did it. However, the God tiers and D tiers do match with the results from K-means, which are expected because those 2 tiers are the superlative tiers that contain either the best champions in certain roles or the worst. `WinRate`, `PickRate`, `Role`, and `BanRate` being the most significant features is somewhat expected because those all reflect the success of a champion other than `Role`. Role` more or less dictates the conventionality of a pick; most of the time, being a conventional role for a champion yields better success in games. It is expected that the accuracy for predicting the tiers of temporary champions is smaller than that of non-temporary champions, as temporary champions can contain off-role or newly-released champions, which makes sense to be harder to predict. 
+
+|   There is value in these results since League of Legends is a popular video game that every video-game player would have played sometime in their gaming journey. Metasrc has been around for a long time as a website that provides stats on League of Legends champions. Knowing how the tiers on Metasrc are constructed and whether the tiers are worth following will be important for new players and veteran players alike, as not everyone has a lot of time devoted to studying the game. Tiers from Metasrc help players decide whether a champion is worth playing or picking up. Especially in higher ranks, META becomes more and more important as players from higher brackets can excavate all the potential in a champion. By producing our own tiers with a model that utilizes features that are indicative of success, we show the inner workings of how the tiers on Metasrc are constructed. Since we showed that temporary champions and non-temporary champions are so different that the tiers cannot fully apply accurately, players should be wary of those odd temporary picks and the tiers projected by Metasrc. 
+
+|   Something we could do better is to implement noise injections to prevent overtraining or overfitting in our model. Noise injection is when we add a randomly generated vector (error/noise) to a column/variable so that the model does not pick up particular random patterns in a data set, such that the model fits too well to that data set and does terribly at predictions for other observations. In terms of additional data, there could potentially be value in a "rank" variable indicative of how good players generally are playing a said champion within a given role. Because of disparate skill floors and ceilings, champions may perform differently in different ranks. Mechanical-intensive champions may require a lot more game knowledge to pull off, whereas simple champions are easy to play. 
+
+
+
+```{r, eval=FALSE, echo = F}
 Mode <- function(x) {
   ux <- unique(x)
   ux[which.max(tabulate(match(x, ux)))]
@@ -1260,3 +1206,119 @@ boundary_plot <- leaguedf %>%
 (acc_plot + cm_plot) /boundary_plot
 ```
 
+
+```{r, message = F, warning = F, echo = F, eval = F}
+leaguedf %>%
+  select("Name", "PickBanRate", "WinRate", "Role", "RoleRate", "Class", "Patch") %>%
+  filter(!(Class == "NULL")) %>%
+  group_by(Role) %>%
+  group_map( ~ plot_ly(data = .,
+      x = ~ PickBanRate,
+      y = ~ WinRate,
+      color = ~ Class,
+      text = ~ Name,
+      frame = ~ Patch, 
+      hoverinfo = "text",
+      type = "scatter",
+      mode = "markers", 
+      marker = list(size = ~ RoleRate*5)
+      ), .keep = TRUE) %>%
+  subplot(nrows = 2, shareX = TRUE, shareY=TRUE, margin=0.03) %>%
+  layout(showlegend = FALSE, title = 'Pick Ban Rate vs. Win Rate by Patch seperated by Role',
+         plot_bgcolor='#e5ecf6', 
+         xaxis = list( 
+           zerolinecolor = '#ffff', 
+           zerolinewidth = 2, 
+           gridcolor = 'ffff'), 
+         yaxis = list( 
+           zerolinecolor = '#ffff', 
+           zerolinewidth = 2, 
+           gridcolor = 'ffff'),
+         margin = 0.07) %>%
+  layout(annotations = annotations)
+
+```
+
+
+
+```{r CorrelationFunc, echo = F, eval = F}
+
+
+MakeCorrelationDf <- function(varname, outputname = varname) {
+  head(leaguedf)
+  tempdf <- leaguedf %>%
+    pivot_wider(id_cols = c("Name", "Role"), names_from = "Patch", values_from = varname) %>%
+    mutate(ID = paste(Name, Role, sep = ' ')) %>%
+    select(-c(1, 2)) %>%
+    na.omit()
+  NameList <- tempdf$ID
+  
+  tempdf <- tempdf %>%
+    t() %>%
+    as_tibble() %>%
+    filter(row_number() < n()) %>%
+    mutate_if(is.character, as.numeric)
+
+  
+  colnames(tempdf) <- NameList
+  tempdf <- as_tibble(cor(tempdf))
+  rownames(tempdf) <- colnames(tempdf)
+  tempdf <- tempdf %>%
+    rownames_to_column(var = "Champion1") %>%
+    gather(key = "Champion2", value = !!paste(outputname, "Correlation", sep = ''), -Champion1) %>%
+    filter(!(.by = Champion1 == Champion2))
+  
+  return(tempdf)
+}
+```
+
+```{r PbrCorrelation, echo  = F, warning = F, eval = F}
+PbrCorrelation <- MakeCorrelationDf("PickBanRate", "Pbr") %>%
+  group_by(Champion2) %>%
+  arrange(PbrCorrelation) %>%
+  mutate(label = case_when(
+    row_number() <= 2 ~ str_to_title(str_replace(Champion1, '\\.', ' ')),
+    row_number() > n() - 2 ~ str_to_title(str_replace(Champion1, '\\.', ' ')), # This adds a Space into the name where the . is  and uncapitalizes the second role
+    Champion2 == "Tahm Kench.Support" & PbrCorrelation > 0.68 ~ "Senna Support", # This is an outlier so labeling is justified, especially since it helps show the part of the plot
+    TRUE ~ as.character(NA)
+  )) 
+
+PbrCorrelation %>% filter(Champion2 %in% c("Tahm Kench Support", "Senna Support", "Ashe Adc")) %>% 
+  ggplot(mapping = aes(x=Champion2, y = PbrCorrelation)) + 
+  geom_boxplot() + 
+  ggtitle("PBR Correlation Boxplot")+ 
+  scale_x_discrete(labels = c("Ashe Adc", "Senna Support", "Tahm Kench Support")) + 
+  labs(x = "", y = "Pick Ban Rate Correlation Coefficient", caption = "Minimum and Maximum corelation coefficients are annotated, as well as Senna Support for Tahm Kench Support in order\n to best visualize how the strength of certain counters, replacements, and synergies effect Pick Ban Rate.")  + 
+  geom_text(aes(label = label), na.rm = TRUE, hjust = -0.1, size = 3, check_overlap = T) 
+```
+
+
+```{r Std winRate, echo = F, message = F, eval = F}
+leaguedf %>% 
+  group_by(Name) %>% 
+  summarise(Mean_pick=mean(PickRate, na.rm = TRUE), Std_pick=sd(PickRate, na.rm=TRUE), Mean_win=mean(WinRate, na.rm = TRUE), Std_win=sd(WinRate, na.rm=TRUE)) %>% 
+  arrange(desc(Mean_pick)) %>% 
+  ggplot(aes(Mean_pick, Std_win)) + geom_point() + labs(x = "Mean Pick Rate", y = "Standard Deviation Win Rate", title = "Mean PickRate and Volatility of WinRate") + 
+  coord_trans(x = 'log10', y = 'log10') + 
+  geom_smooth(aes(x = Mean_pick, y = Std_win), method = 'lm', se = F) # THIS LOOKS NON LINEAR BUT IT IS LINEAR, ITS JUST ON A LOG SCALE!!!!
+
+```
+
+
+
+```{r, fig.height = 15, eval = F, echo = F}
+plot1 <- leaguedf %>%
+  filter(Name %in% c("Fiora", "Darius", "Garen", "Aatrox", "Jax"), Role == "Top") %>%
+  ggplot() + geom_count(aes(x = as.factor(Patch), y = Name, size = PickRate, color = Name)) + labs(x = "Patch", y = "Name", title = "Pick Rate")
+
+plot2 <- leaguedf %>%
+  filter(Name %in% c("Fiora", "Darius", "Garen", "Aatrox", "Jax"), Role == "Top") %>%
+  ggplot() + geom_count(aes(x = as.factor(Patch), y = Name, size = BanRate, color = Name)) + labs(x = "Patch", y = "Name", title = "Ban Rate")
+
+plot3 <- leaguedf %>%
+  filter(Name %in% c("Fiora", "Darius", "Garen", "Aatrox", "Jax"), Role == "Top") %>%
+  ggplot() + geom_count(aes(x = as.factor(Patch), y = Name, size = WinRate, color = Name)) + labs(x = "Patch", y = "Name", title = "Win Rate")
+
+(plot1 / plot2/ plot3) + plot_annotation(title = "Analysis of Staple Top Champions")
+
+```
