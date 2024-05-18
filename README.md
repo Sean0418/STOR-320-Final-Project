@@ -6,6 +6,8 @@
 - Diya Joshi, The Orator
 - Barrett White, The Orator
 - Alan Spiwak, The deliverer
+ 
+### [Final Paper](https://sean0418.github.io/STOR320FinalPaper.github.io/)
 
 ## Description of Dataset
 This project aims to be an analysis of the balance changes and tier system of MetaSRC. We currently have one dataset: S13LeagueOfLegendsData.csv, which contains the following information:
